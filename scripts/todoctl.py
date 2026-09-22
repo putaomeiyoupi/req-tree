@@ -2610,7 +2610,7 @@ function render(){
   var vis=visibleSet(), host=document.getElementById("tree");
   host.innerHTML="";var count=0;
   function walk(id,depth){
-    if(!vis[id]) return;
+    if(!vis[id]) return null;
     var n=byId[id], hasKids=(kids[id]||[]).length>0;
     var li=el("li");
     var row=el("div","row");
@@ -2631,13 +2631,16 @@ function render(){
     count++;
     if(hasKids&&!S.collapsed[id]){
       var ul=el("ul");
-      (kids[id]||[]).forEach(function(c){ul.appendChild(walk(c,depth+1));});
+      // ⚠️ 必须滤掉未匹配的子节点：walk 被过滤时返回 null，
+      //    appendChild(null) 会抛 "parameter 1 is not of type 'Node'" 并**中断整个 render**
+      //    ⇒ 树直接消失（2026-09-22 实测：点一次状态标签、或搜任意词即触发）。
+      (kids[id]||[]).forEach(function(c){var x=walk(c,depth+1);if(x)ul.appendChild(x);});
       if(ul.children.length) li.appendChild(ul);
     }
     return li;
   }
   (kids[""]||[]).forEach(function(r){var x=walk(r,0);if(x)host.appendChild(x);});
-  if(!count){var e=el("div","empty","没有匹配的节点");host.appendChild(e);}
+  if(!count){var e=el("div","empty","没有匹配的节点 —— 检查上方状态标签是否被全部关掉，或清空搜索框");host.appendChild(e);}
   var s=DATA.stats;
   document.getElementById("stats").innerHTML=
     "<div><b>"+s.total+"</b>总节点</div><div><b>"+s.n_unclosed+"</b>未收口</div>"+
@@ -2648,6 +2651,7 @@ function render(){
   document.getElementById("meta").textContent="生成于 "+DATA.generated+"　·　真源 tree.json（本页为派生物，禁止手改）";
 }
 document.querySelectorAll(".chip[data-st]").forEach(function(c){
+  c.title="点击可隐藏 / 显示「"+c.textContent.trim()+"」的节点（默认全显示）";
   c.onclick=function(){
     var k=c.getAttribute("data-st");S.status[k]=!S.status[k];
     c.setAttribute("data-on",S.status[k]?"1":"0");render();
