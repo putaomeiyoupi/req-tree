@@ -2860,6 +2860,18 @@ def main(argv=None):
     root, origin = resolve_root_info(getattr(a, "root", None))
     a.root_origin = origin          # 供 init 打印「落点来源」；同一次判定，避免两处结论不一致
 
+    # 真源不存在时直接拒绝：`init`（负责创建）与 `restore`（从快照恢复）例外。
+    # ⚠️ 必须在**拿写锁之前**拦 —— 否则「--root 指错目录」不仅会让读/渲染命令
+    #    静默产出空视图（把「参数指错」伪装成「树是空的」），还会在那个错误位置
+    #    留下 tree.lock 等残留（2026-09-22 实测：仓库根被误建 8 个空派生物）。
+    if a.cmd not in ("init", "restore") and not store_path(root).exists():
+        print("✖ 真源不存在：%s" % store_path(root), file=sys.stderr)
+        print("  落点判定：%s" % origin, file=sys.stderr)
+        print("  处理：① `--root` 要指向【真源目录】（含 tree.json，"
+              "如 <repo>/docs/requirements），不是仓库根；", file=sys.stderr)
+        print("        ② 若确实尚未初始化，先跑 `todoctl init`。", file=sys.stderr)
+        return 2
+
     readonly = a.cmd in READONLY_CMDS
     ctx = nullcontext() if readonly else WriteLock(root, wait=getattr(a, "wait", 0) or 0.0)
     try:
