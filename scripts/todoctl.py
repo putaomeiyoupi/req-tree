@@ -2560,6 +2560,26 @@ li{margin:2px 0}
 .warn{color:var(--doing)}
 .hide{display:none}
 .empty{color:var(--dim);padding:44px 0;text-align:center}
+/* ---------- 标签页 ---------- */
+.tabs{display:flex;gap:4px;padding:0 24px;border-bottom:1px solid var(--line)}
+.tab{padding:8px 14px;font-size:13px;color:var(--dim);cursor:pointer;border-bottom:2px solid transparent;user-select:none}
+.tab:hover{color:var(--fg)}
+.tab[data-on="1"]{color:var(--fg);border-bottom-color:var(--fg)}
+/* ---------- 使用说明页 ---------- */
+.doc{padding:18px 24px 90px;max-width:1200px}
+.doc h2{font-size:14px;font-weight:500;margin:24px 0 10px}
+.doc h2:first-child{margin-top:0}
+.doc p{color:var(--dim);font-size:12.5px;margin:8px 0}
+.doc table{width:100%;border-collapse:collapse;font-size:12.5px;margin:10px 0 6px}
+.doc th,.doc td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+.doc th{color:var(--dim);font-weight:500;background:var(--panel)}
+.doc td.grp{font-weight:500;white-space:nowrap}
+.doc code{font-family:ui-monospace,Consolas,monospace;font-size:12px;background:var(--panel);
+border:1px solid var(--line);border-radius:5px;padding:1px 5px;white-space:nowrap}
+.doc pre{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;
+overflow:auto;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;line-height:1.8;margin:8px 0}
+.doc pre .cm{color:var(--dim)}
+.doc .note{color:var(--dim);font-size:12px;margin-top:6px;padding-left:10px;border-left:2px solid var(--line)}
 </style>
 </head>
 <body>
@@ -2567,6 +2587,11 @@ li{margin:2px 0}
   <h1 id="title">需求树看板</h1>
   <div class="meta" id="meta"></div>
 </header>
+<nav class="tabs">
+  <span class="tab" data-pane="tree" data-on="1">需求树</span>
+  <span class="tab" data-pane="help">使用说明</span>
+</nav>
+<section id="pane-tree">
 <div class="stats" id="stats"></div>
 <div class="bar">
   <span class="chip" data-st="open" data-on="1">未开始</span>
@@ -2580,6 +2605,69 @@ li{margin:2px 0}
   <input type="search" id="q" placeholder="搜索 标题 / ID / 编号 / 派生理由">
 </div>
 <main><ul class="root" id="tree"></ul></main>
+</section>
+<section id="pane-help" hidden>
+<div class="doc">
+
+<h2>一、这工具能做什么（按能力分组）</h2>
+<table>
+<tr><th style="width:64px">组</th><th>能力</th><th style="width:330px">命令</th></tr>
+<tr><td class="grp">建</td><td>给项目立唯一真源</td><td><code>init</code></td></tr>
+<tr><td class="grp">写</td><td>记新需求 / 派生需求、改标题理由验收条件、随手记进度</td><td><code>add</code> <code>update</code> <code>note</code></td></tr>
+<tr><td class="grp">状态</td><td>开始、标记阻塞、解除阻塞、实现完成、收口、放弃</td><td><code>start</code> <code>block</code> <code>unblock</code> <code>done</code> <code>close</code> <code>drop</code></td></tr>
+<tr><td class="grp">恢复</td><td>拿回上次现场、看手头同时几件事</td><td><code>resume</code> <code>bench</code></td></tr>
+<tr><td class="grp">查看</td><td>查单条细节、全量体检、按线抽变更、周报、盯一条分支</td><td><code>show</code> <code>check</code> <code>log</code> <code>report</code> <code>focus</code></td></tr>
+<tr><td class="grp">治理</td><td>封板成不可变时点、按快照回滚、跨进程写锁</td><td><code>baseline</code> <code>restore</code> <code>tree.lock</code></td></tr>
+<tr><td class="grp">导出</td><td>出 7 个视图、导出脱敏公开副本</td><td><code>render</code> <code>export</code></td></tr>
+</table>
+
+<h2>二、怎么用（最常用的一条路径）</h2>
+<pre>resume                                     <span class="cm">← ◎ 开工第一件事：拿回上次现场（RESUME.md）</span>
+add --parent R-0006 --title "…" --why "…" --done-when "…"   <span class="cm">← ◎ 发现新问题当场落库</span>
+start R-0006                               <span class="cm">← ◎ 开始做（需 done_when；祖先不得已收口）</span>
+note R-0006 做到哪 发现了什么                 <span class="cm">← ◎ 做一步记一句（免引号）</span>
+bench                                      <span class="cm">← ◎ 随时看手头同时有几件事（BENCH.md）</span>
+done R-0006 --note "接口已实现"              <span class="cm">← ◎ 实现完成（≠ 收口）</span>
+close R-0006 --evidence "commit:9f2c1ab" --evidence "test:…"   <span class="cm">← ◎ 验证通过才算收口</span>
+check                                      <span class="cm">← ◎ 体检（有错返回 1）</span></pre>
+<p class="note">五个完整工作流（首次建真源 / 派生新需求 / 推进与收口 / 出视图与巡检 / 每周 rebalance）见 skill 内
+<code>references/entry-map.md</code> 第五节。</p>
+
+<h2>三、全部子命令（21 个）与主要选项</h2>
+<table>
+<tr><th style="width:64px">组</th><th style="width:210px">命令</th><th>主要选项</th></tr>
+<tr><td class="grp">建</td><td><code>init</code></td><td><code>--project</code></td></tr>
+<tr><td class="grp">写</td><td><code>add</code></td><td><code>--parent</code> <code>--title</code> <code>--why</code> <code>--done-when</code> <code>--kind</code> <code>--depends-on</code> <code>--internal</code></td></tr>
+<tr><td class="grp">写</td><td><code>update</code></td><td><code>--title</code> <code>--why</code> <code>--done-when</code> <code>--next-step</code> <code>--next</code> <code>--kind</code> <code>--depends-on</code> <code>--internal</code> <code>--external</code></td></tr>
+<tr><td class="grp">写</td><td><code>note</code></td><td><code>--next-step</code> <code>--next</code></td></tr>
+<tr><td class="grp">状态</td><td><code>start</code></td><td><code>--force</code></td></tr>
+<tr><td class="grp">状态</td><td><code>block</code></td><td><code>--reason</code></td></tr>
+<tr><td class="grp">状态</td><td><code>unblock</code></td><td><code>--force</code></td></tr>
+<tr><td class="grp">状态</td><td><code>done</code></td><td><code>--note</code></td></tr>
+<tr><td class="grp">状态</td><td><code>close</code></td><td><code>--evidence</code>（可重复 / 必填）<code>--override-reason</code> <code>--force</code></td></tr>
+<tr><td class="grp">状态</td><td><code>drop</code></td><td><code>--reason</code> <code>--force</code></td></tr>
+<tr><td class="grp">恢复</td><td><code>resume</code> / <code>bench</code></td><td>—</td></tr>
+<tr><td class="grp">查看</td><td><code>show</code> / <code>check</code> / <code>focus</code></td><td>—</td></tr>
+<tr><td class="grp">查看</td><td><code>log</code></td><td><code>--line</code> <code>--since</code> <code>--limit</code> <code>--commit-msg</code></td></tr>
+<tr><td class="grp">治理</td><td><code>baseline</code></td><td><code>--name</code> <code>--note</code> <code>--list</code> <code>--diff [ID]</code></td></tr>
+<tr><td class="grp">治理</td><td><code>restore</code></td><td><code>--list</code> <code>--last</code> <code>--file</code> <code>--date</code> <code>--yes</code>（必填）</td></tr>
+<tr><td class="grp">巡检</td><td><code>report</code></td><td><code>--days</code></td></tr>
+<tr><td class="grp">导出</td><td><code>render</code> / <code>export</code></td><td><code>--out</code></td></tr>
+</table>
+
+<h2>四、约定与退出码</h2>
+<table>
+<tr><th style="width:190px">项</th><th>规则</th></tr>
+<tr><td class="grp">状态流转</td><td><code>open → doing → done → closed</code>；<code>doing ⇄ blocked</code>；任意非终态 <code>→ dropped</code>。<b>done（改完了）≠ closed（已验证收口）</b>。</td></tr>
+<tr><td class="grp">前置要求</td><td><code>start</code> / <code>unblock</code> 需 <code>done_when</code>，且祖先不得已收口 / 已放弃；<code>block</code> / <code>drop</code> 需 <code>--reason</code>；<code>close</code> 需 <code>--evidence</code>。</td></tr>
+<tr><td class="grp">两个确认别混用</td><td><code>--force</code> 只跳过「未 done 不能收口」的状态检查，<b>跳不过假收口检查</b>；<code>--override-reason</code> 才放行「仍有未收口后代」。两个都踩到时要<b>同时给</b>。</td></tr>
+<tr><td class="grp">退出码</td><td><code>0</code> 成功 ｜ <code>1</code> <code>check</code>/<code>render</code> 发现真源有错 ｜ <code>2</code> 被强校验或参数校验拒绝。<code>render</code> 在真源有错时<b>不会静默产出空树</b>，别拿错误状态下的视图做判断。</td></tr>
+<tr><td class="grp">全局参数</td><td><code>--root &lt;真源目录&gt;</code>（写在子命令前后都可以）｜ <code>--no-render</code> 关闭自动刷新 ｜ <code>--wait SEC</code> 写锁等待秒数。</td></tr>
+<tr><td class="grp">真源 / 派生物</td><td><b>真源</b>：<code>tree.json</code> <code>journal.jsonl</code> <code>baselines.json</code> <code>snapshots/</code> <code>tree.lock</code> —— 写入只走 CLI。<br><b>派生物</b>：本页等 7 个视图 —— <code>render</code> 覆盖生成，<b>禁止手改</b>。</td></tr>
+</table>
+
+</div>
+</section>
 <script>
 const DATA = __PAYLOAD__;
 const LABEL = {open:"未开始",doing:"进行中",blocked:"阻塞",done:"已完成",closed:"已收口",dropped:"已放弃"};
@@ -2662,6 +2750,14 @@ document.getElementById("only-active").onclick=function(){
 document.getElementById("warn-only").onclick=function(){
   S.warnOnly=!S.warnOnly;this.setAttribute("data-on",S.warnOnly?"1":"0");render();};
 document.getElementById("q").oninput=function(){S.q=this.value.trim().toLowerCase();render();};
+document.querySelectorAll(".tab").forEach(function(t){
+  t.onclick=function(){
+    var k=t.getAttribute("data-pane");
+    document.querySelectorAll(".tab").forEach(function(x){x.setAttribute("data-on", x===t?"1":"0");});
+    document.getElementById("pane-tree").hidden=(k!=="tree");
+    document.getElementById("pane-help").hidden=(k!=="help");
+  };
+});
 render();
 </script>
 </body>
