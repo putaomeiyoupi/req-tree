@@ -1,0 +1,19 @@
+#!/bin/sh
+# POSIX launcher for todoctl.py —— macOS / Linux / WSL / Git Bash.
+# Python is resolved from PATH on purpose: no machine-specific paths in this repo.
+set -e
+
+dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+
+if command -v python3 >/dev/null 2>&1; then
+    exec python3 "$dir/todoctl.py" "$@"
+fi
+if command -v python >/dev/null 2>&1; then
+    exec python "$dir/todoctl.py" "$@"
+fi
+
+echo "[todoctl] Python 3 not found on PATH." >&2
+echo "          Install Python 3.8+:" >&2
+echo "            Debian/Ubuntu:  sudo apt install python3" >&2
+echo "            macOS:          brew install python3" >&2
+exit 127

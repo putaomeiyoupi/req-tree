@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 开发期工件 —— 不随本体发布（本地仍可运行，只是不进仓库）
+scripts/selftest.py
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
