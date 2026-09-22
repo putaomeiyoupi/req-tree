@@ -2,6 +2,11 @@
 
 **项目推进中的需求派生与收口的唯一真源。**
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
+![Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)
+
 - **零依赖** —— 单个 Python 文件，仅用标准库
 - **跨平台** —— Windows / macOS / Linux
 - **离线** —— 数据就是一份 JSON，存在你自己的仓库里
