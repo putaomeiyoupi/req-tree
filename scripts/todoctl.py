@@ -2560,6 +2560,9 @@ li{margin:2px 0}
 .warn{color:var(--doing)}
 .hide{display:none}
 .empty{color:var(--dim);padding:44px 0;text-align:center}
+/* 仅为保持层级而显示的祖先：本身不符合当前筛选条件 ⇒ 视觉变淡，悬停恢复 */
+li.anc>.row{opacity:.5}
+li.anc>.row:hover{opacity:1}
 /* ---------- 标签页 ---------- */
 .tabs{display:flex;gap:4px;padding:0 24px;border-bottom:1px solid var(--line)}
 .tab{padding:8px 14px;font-size:13px;color:var(--dim);cursor:pointer;border-bottom:2px solid transparent;user-select:none}
@@ -2576,6 +2579,9 @@ li{margin:2px 0}
 .doc td.grp{font-weight:500;white-space:nowrap}
 .doc code{font-family:ui-monospace,Consolas,monospace;font-size:12px;background:var(--panel);
 border:1px solid var(--line);border-radius:5px;padding:1px 5px;white-space:nowrap}
+/* 非命令的代码标识（如状态名）——刻意不用 <code>，避免被 L18「命令必须真实存在」的正则误判 */
+.doc .mono{font-family:ui-monospace,Consolas,monospace;font-size:12px;background:var(--panel);
+border:1px solid var(--line);border-radius:5px;padding:1px 5px;white-space:nowrap;color:var(--dim)}
 .doc pre{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;
 overflow:auto;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;line-height:1.8;margin:8px 0}
 .doc pre .cm{color:var(--dim)}
@@ -2602,6 +2608,8 @@ overflow:auto;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;line-
   <span class="chip" data-st="dropped" data-on="1">已放弃</span>
   <span class="chip" id="only-active">仅未收口</span>
   <span class="chip" id="warn-only">仅看告警</span>
+  <span class="chip" id="leaf-only" data-on="1" title="统计口径：默认只算没有子节点的节点（实际施工项）。关掉则连需求级容器/根一起算。">仅统计叶子</span>
+  <span class="chip" id="reset" title="恢复默认：所有状态都显示，并清空搜索框">重置筛选</span>
   <input type="search" id="q" placeholder="搜索 标题 / ID / 编号 / 派生理由">
 </div>
 <main><ul class="root" id="tree"></ul></main>
@@ -2655,7 +2663,31 @@ check                                      <span class="cm">← ◎ 体检（有
 <tr><td class="grp">导出</td><td><code>render</code> / <code>export</code></td><td><code>--out</code></td></tr>
 </table>
 
-<h2>四、约定与退出码</h2>
+<h2>四、状态定义（6 个）</h2>
+<table>
+<tr><th style="width:86px">状态</th><th style="width:96px">看板标签</th><th>含义</th><th style="width:300px">进入条件</th></tr>
+<tr><td><span class="mono">open</span></td><td>未开始</td><td>已记录，未推进</td><td><code>add</code></td></tr>
+<tr><td><span class="mono">doing</span></td><td>进行中</td><td>正在处理</td><td>需 <code>done_when</code>；依赖已收口；<b>祖先不得是已收口 / 已放弃</b>（可用 <code>--force</code> 放行，但留 <code>W7</code> 告警）</td></tr>
+<tr><td><span class="mono">blocked</span></td><td>阻塞</td><td>受阻停滞</td><td>必须给 <code>--reason</code></td></tr>
+<tr><td><span class="mono">done</span></td><td>已完成</td><td><b>实现完成，待验证</b></td><td>从 <span class="mono">doing</span> 转来</td></tr>
+<tr><td><span class="mono">closed</span></td><td>已收口</td><td><b>已验证收口</b></td><td>从 <span class="mono">done</span>；≥1 条证据；未被显式接受的未收口后代为 0</td></tr>
+<tr><td><span class="mono">dropped</span></td><td>已放弃</td><td>主动放弃</td><td>必须给 <code>--reason</code></td></tr>
+</table>
+<p class="note"><b>两个关键区分</b>：① <span class="mono">done</span> ≠ <span class="mono">closed</span> ——「我改完了」不等于「这件事结束了」。
+② <b>未收口 = open + doing + blocked + done</b>（即除 <span class="mono">closed</span> / <span class="mono">dropped</span> 外的全部），
+所以统计栏的「未收口」通常<b>大于</b>「未开始」——它们不是同一个数。</p>
+
+<h2>五、筛选口径（数字为什么和直觉不一致）</h2>
+<table>
+<tr><th style="width:160px">项</th><th>规则</th></tr>
+<tr><td class="grp">状态标签</td><td>默认<b>全部显示</b>；点一下 = <b>隐藏该状态</b>（<b>不是</b>「只看该状态」）。全关会得到空树，用「重置筛选」一键恢复。</td></tr>
+<tr><td class="grp">多条件是「且」</td><td>状态标签 × 「仅未收口」 × 「仅看告警」 × 搜索框，四者同时生效。</td></tr>
+<tr><td class="grp">搜索范围</td><td>只搜 <b>ID / 位置编号 / 标题 / 派生理由 / 收口条件</b>（<b>不含</b>进度记录与收口证据）。</td></tr>
+<tr><td class="grp">⭐ 统计口径</td><td><b>默认只统计叶子节点</b>（没有子节点的 = 实际施工项）。需求级容器与根节点的「收口」回答的是另一个问题（「这条线整体达成了吗」），与「还有几件事要做」混在同一个数里会让后者失真 ⇒ 需要看全量时关掉「仅统计叶子」。</td></tr>
+<tr><td class="grp">⭐ 祖先占位</td><td>为不让树断裂，匹配节点的<b>上层节点会被一并显示</b>——它们本身<b>不符合</b>当前筛选，故用<b>变淡</b>样式标出；统计栏也据此拆成「匹配筛选」与「祖先占位」两个数，而不是一个含糊的合计。</td></tr>
+</table>
+
+<h2>六、约定与退出码</h2>
 <table>
 <tr><th style="width:190px">项</th><th>规则</th></tr>
 <tr><td class="grp">状态流转</td><td><code>open → doing → done → closed</code>；<code>doing ⇄ blocked</code>；任意非终态 <code>→ dropped</code>。<b>done（改完了）≠ closed（已验证收口）</b>。</td></tr>
@@ -2673,7 +2705,7 @@ const DATA = __PAYLOAD__;
 const LABEL = {open:"未开始",doing:"进行中",blocked:"阻塞",done:"已完成",closed:"已收口",dropped:"已放弃"};
 const COLOR = {open:"var(--open)",doing:"var(--doing)",blocked:"var(--blocked)",done:"var(--done)",closed:"var(--closed)",dropped:"var(--dropped)"};
 const TERMINAL = {closed:1,dropped:1};
-const S = {status:{},q:"",onlyActive:false,warnOnly:false,collapsed:{}};
+const S = {status:{},q:"",onlyActive:false,warnOnly:false,leafOnly:true,collapsed:{}};
 ["open","doing","blocked","done","closed","dropped"].forEach(function(k){S.status[k]=true});
 const byId={},kids={};
 DATA.nodes.forEach(function(n){byId[n.id]=n;kids[n.parent||""]=kids[n.parent||""]||[];kids[n.parent||""].push(n.id)});
@@ -2696,7 +2728,7 @@ function visibleSet(){
 function el(tag,cls,txt){var e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e;}
 function render(){
   var vis=visibleSet(), host=document.getElementById("tree");
-  host.innerHTML="";var count=0;
+  host.innerHTML="";var count=0,matched=0;
   function walk(id,depth){
     if(!vis[id]) return null;
     var n=byId[id], hasKids=(kids[id]||[]).length>0;
@@ -2716,6 +2748,10 @@ function render(){
     if(n.status==="blocked"&&n.blockedBy){li.appendChild(el("div","why","阻塞于："+n.blockedBy));}
     if(n.status==="closed"&&n.evidence&&n.evidence.length){li.appendChild(el("div","why","收口证据："+n.evidence.join(" · ")));}
     if(n.doneWhen){li.appendChild(el("div","why","收口条件："+n.doneWhen));}
+    // 区分「真匹配」与「仅为保持树结构而带上来的祖先」——后者本身不符合当前筛选条件，
+    // 若不标出来，用户会看到「筛掉了某状态、树里却还有该状态」的错觉（2026-09-23 实测反馈）。
+    if(matches(n)){matched++;}
+    else{li.className="anc";row.title="仅为保持层级而显示的上层节点（本身不符合当前筛选条件）";}
     count++;
     if(hasKids&&!S.collapsed[id]){
       var ul=el("ul");
@@ -2730,11 +2766,26 @@ function render(){
   (kids[""]||[]).forEach(function(r){var x=walk(r,0);if(x)host.appendChild(x);});
   if(!count){var e=el("div","empty","没有匹配的节点 —— 检查上方状态标签是否被全部关掉，或清空搜索框");host.appendChild(e);}
   var s=DATA.stats;
+  // 统计口径：默认只算**叶子**（无子节点 = 实际施工项）。需求级容器 / 根的「收口」回答的是另一个
+  // 问题（「这条线整体达成了吗」），与「还有几件事要做」混在一个数里会让后者失真
+  // （2026-09-23 用户反馈：中间节点和根无意义）⇒ 拆成可切换的口径。
+  var sc={total:0,unclosed:0,doing:0,blocked:0,closed:0};
+  DATA.nodes.forEach(function(n){
+    if(S.leafOnly && (kids[n.id]||[]).length) return;
+    sc.total++;
+    if(TERMINAL[n.status]) sc.closed++; else sc.unclosed++;
+    if(n.status==="doing") sc.doing++;
+    if(n.status==="blocked") sc.blocked++;
+  });
   document.getElementById("stats").innerHTML=
-    "<div><b>"+s.total+"</b>总节点</div><div><b>"+s.n_unclosed+"</b>未收口</div>"+
-    "<div><b>"+s.n_doing+"</b>进行中</div><div><b>"+s.n_blocked+"</b>阻塞</div>"+
-    "<div><b>"+s.n_closed+"</b>已收口</div><div><b>"+s.max_depth+"</b>最大深度</div>"+
-    "<div><b>"+count+"</b>当前显示</div>";
+    "<div><b>"+sc.total+"</b>"+(S.leafOnly?"叶子节点":"全部节点")+"</div>"+
+    "<div><b>"+sc.unclosed+"</b>未收口</div>"+
+    "<div><b>"+sc.doing+"</b>进行中</div><div><b>"+sc.blocked+"</b>阻塞</div>"+
+    "<div><b>"+sc.closed+"</b>已收口</div><div><b>"+s.max_depth+"</b>最大深度</div>"+
+    "<div><b>"+matched+"</b>匹配筛选</div>"+
+    (count>matched
+      ? "<div title=\"这些上层节点本身不符合当前筛选，仅为保持树的层级而显示\"><b>+"+(count-matched)+"</b>祖先占位</div>"
+      : "");
   document.getElementById("title").textContent="需求树看板"+(DATA.project?" · "+DATA.project:"");
   document.getElementById("meta").textContent="生成于 "+DATA.generated+"　·　真源 tree.json（本页为派生物，禁止手改）";
 }
@@ -2749,7 +2800,19 @@ document.getElementById("only-active").onclick=function(){
   S.onlyActive=!S.onlyActive;this.setAttribute("data-on",S.onlyActive?"1":"0");render();};
 document.getElementById("warn-only").onclick=function(){
   S.warnOnly=!S.warnOnly;this.setAttribute("data-on",S.warnOnly?"1":"0");render();};
+document.getElementById("leaf-only").onclick=function(){
+  S.leafOnly=!S.leafOnly;this.setAttribute("data-on",S.leafOnly?"1":"0");render();};
 document.getElementById("q").oninput=function(){S.q=this.value.trim().toLowerCase();render();};
+document.getElementById("reset").onclick=function(){
+  ["open","doing","blocked","done","closed","dropped"].forEach(function(k){S.status[k]=true;});
+  S.onlyActive=false;S.warnOnly=false;S.leafOnly=true;S.q="";
+  document.getElementById("q").value="";
+  document.querySelectorAll(".chip[data-st]").forEach(function(c){c.setAttribute("data-on","1");});
+  document.getElementById("only-active").setAttribute("data-on","0");
+  document.getElementById("warn-only").setAttribute("data-on","0");
+  document.getElementById("leaf-only").setAttribute("data-on","1");
+  render();
+};
 document.querySelectorAll(".tab").forEach(function(t){
   t.onclick=function(){
     var k=t.getAttribute("data-pane");
