@@ -811,7 +811,11 @@ def validate(data: dict, ix=None):
                                len(fresh), ", ".join(fresh[:5]), extra, nid),
                 })
         d = ix.depth(nid)
-        if d > MAX_DEPTH:
+        # ⚠️ 只对**非终态**节点告警：`closed` / `dropped` 是历史留痕，它们的深度不构成"该拆分了"的理由；
+        #    不过滤会让一个已 drop 的空墓碑**永久**挂一条 W1（2026-09-24 实测：重挂节点后 drop 的
+        #    旧 id 停在深度 4，每次 check 都报），把人训练成忽略告警。
+        #    活跃分支仍会各自被检查到（每个节点都算自己的深度）⇒ 不损失检出能力。
+        if d > MAX_DEPTH and n.get("status") not in TERMINAL_STATUSES:
             warns.append({"code": "W1", "id": nid,
                           "msg": "深度 %d 层 > %d 层：评估是否应升级为独立子项目，或说明拆分位置错位" % (d, MAX_DEPTH)})
         sib = [c for c in ix.children(nid) if c.get("status") not in TERMINAL_STATUSES]
