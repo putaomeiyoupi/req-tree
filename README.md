@@ -332,6 +332,41 @@ req-tree/
 
 ---
 
+## 开发与发布（dev / prod 分离）
+
+改这个 skill 时，**别让改动直接落在宿主正在索引的那份副本上**。那等于「项目正在调用的版本随你每一次编辑而变」，而多个会话并行时还会在同一个 working tree 上互相干扰（实测过一次：他方未提交的改动在工作树里横跨 14 小时没人发现）。
+
+两份目录，角色分明：
+
+| 角色 | 位置 | 干什么 |
+|---|---|---|
+| **dev** | 宿主 skills 根**之外**，如 `<skills 根>/../skills-dev/req-tree` | 改代码、跑 `selftest.py`、`git commit` —— **唯一修改入口** |
+| **prod** | 宿主 skills 根之内，如 `<skills 根>/req-tree` | 只读。只接受 dev 的单向推送 |
+
+> dev 放在宿主 skills 根的**同级**（如 `skills-dev/`）最方便，且不会被当成第二个 skill 索引。放进宿主索引的那个根里则会被扫成两个 skill。
+
+发布用**仓库根之外**的 `publish-req-tree.py`（本机脚本，不随本体发布）。四道门，任一不过即中止且**不落任何改动**：
+
+```
+[1/4] dev 工作树干净     未提交的东西不允许发布
+[2/4] dev selftest 全绿   回归没跑过就不许出门
+[3/4] prod 工作树干净     有人绕过脚本直接改过 prod 就报警
+[4/4] 可快进              prod 不得存在 dev 没有的提交（防分叉）
+```
+
+```bash
+python publish-req-tree.py --status     # 看两侧版本与工作树状态
+python publish-req-tree.py --dry-run    # 预演：跑全部门禁，但不落地
+python publish-req-tree.py              # 发布（快进合并 + 回读校验）
+python publish-req-tree.py --push       # 发布后推 GitHub（对外备份，需显式指定）
+```
+
+发布走 `git merge --ff-only`，**不做强推、不产生分叉**；落地后回读两侧 HEAD 是否一致。
+
+> **为什么不是 vendor 进项目**（把 `todoctl.py` 复制到项目内）：那样工具就有了两份，每次修改都要手工同步 —— 正是这套分离机制要避免的问题。skill 应被视为**从 git 安装的外部依赖**，项目侧只留一个薄入口。
+
+---
+
 ## 许可
 
 MIT，见 [`LICENSE`](LICENSE)。
