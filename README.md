@@ -340,10 +340,10 @@ req-tree/
 
 | 角色 | 位置 | 干什么 |
 |---|---|---|
-| **dev** | 宿主 skills 根**之外**，如 `<skills 根>/../skills-dev/req-tree` | 改代码、跑 `selftest.py`、`git commit` —— **唯一修改入口** |
+| **dev** | 宿主 skills 根**之外**的任意位置（本机实例：`F:\Workbuddy\_skills-dev\req-tree`） | 改代码、跑 `selftest.py`、`git commit` —— **唯一修改入口** |
 | **prod** | 宿主 skills 根之内，如 `<skills 根>/req-tree` | 只读。只接受 dev 的单向推送 |
 
-> dev 放在宿主 skills 根的**同级**（如 `skills-dev/`）最方便，且不会被当成第二个 skill 索引。放进宿主索引的那个根里则会被扫成两个 skill。
+> 位置只有两条硬要求：① 在**宿主索引的那个根之外**（放进去会被扫成两个 skill）；② **能真实落盘**（有些环境的沙箱会把工作区外写入落进隔离层：报成功但没生效）。换位置前先用探针实测，见宿主记忆 `sandbox-fs-delete.md` §1.3。
 
 发布用**仓库根之外**的 `publish-req-tree.py`（本机脚本，不随本体发布）。四道门，任一不过即中止且**不落任何改动**：
 
