@@ -841,8 +841,14 @@ def validate(data: dict, ix=None):
             warns.append({"code": "W6", "id": nid,
                           "msg": "计划中的下一步 %s（%s）尚未开工 —— 当前正在绕行" % (nx, idx[nx].get("title"))})
 
-        # 计划指向了一个**已经终结**的节点：这个计划已经失效（与「绕行」不同，绕行还能回来）
-        if nx and nx in idx and idx[nx].get("status") in TERMINAL_STATUSES:
+        # 计划指向了一个**已经终结**的节点：这个计划已经失效（与「绕行」不同，绕行还能回来）。
+        # ⚠️ 只对**非终态**的"计划方"告警：本节点自己已 closed / dropped 时，它携带的 `next`
+        #    只是历史留痕，已不存在"该更新计划"的当事人 —— 不过滤会让已终结节点**永久**挂一条 W8
+        #    （2026-09-25 实测：已 closed 与已 dropped 的节点带失效 next，每次 check 都报）。
+        #    消除通道虽在（`update <id> --next ""` 对已 closed 节点仍可用），但那是为静音去改
+        #    历史记录，与 W1 同属「把人训练成忽略告警」。活跃节点（open/doing/blocked/done）照旧被查。
+        if nx and nx in idx and idx[nx].get("status") in TERMINAL_STATUSES \
+                and n.get("status") not in TERMINAL_STATUSES:
             warns.append({"code": "W8", "id": nid,
                           "msg": "计划中的下一步 %s（%s）已%s —— 该计划已失效，请更新或清除 `--next`" % (
                               nx, idx[nx].get("title"),
