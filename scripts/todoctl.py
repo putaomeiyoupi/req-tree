@@ -59,7 +59,7 @@ GLYPH = {
 }
 ID_RE = re.compile(r"^R-\d{4,}$")
 
-MAX_DEPTH = 3            # 超过即告警：该分支是否应升级为独立子项目
+MAX_DEPTH = 3            # 超过即提示（导航用；层级如实记录，勿为好看而整形）
 MAX_OPEN_SIBLINGS = 7    # 同一父节点下未收口子节点上限
 STALE_DAYS = 14          # open/blocked/done 超过该天数未更新即告警
 STALE_DOING_DAYS = 7     # doing 超过该天数未更新即告警（搁置）
@@ -479,7 +479,7 @@ class Ctx:
     每份都是 O(n²) 起 —— 这是渲染慢的第二个来源。
     """
 
-    __slots__ = ("data", "ix", "errors", "warns", "wm", "pm", "stats")
+    __slots__ = ("data", "ix", "errors", "warns", "wm", "pm", "stats", "_hints")
 
     def __init__(self, data: dict):
         self.data = data
@@ -491,6 +491,13 @@ class Ctx:
                 self.wm.setdefault(w["id"], []).append(w["msg"])
         self.pm = path_map(data, self.ix)
         self.stats = summarize(data, self.ix)
+        self._hints = None
+
+    def hints(self) -> dict:
+        """结构概览（**懒算一次**，供页眉 / 看板共用；3 个 md 视图不再各算一遍）。"""
+        if self._hints is None:
+            self._hints = structure_hints(self.data, self.ix, self.pm)
+        return self._hints
 
 
 def by_id(data: dict, ix=None) -> dict:
@@ -721,6 +728,88 @@ def summarize(data: dict, ix=None) -> dict:
     }
 
 
+def structure_hints(data: dict, ix=None, pos=None) -> dict:
+    """结构概览：**只报位置，不改层级**（纯只读视图，不写任何数据）。
+
+    为什么需要它
+    ------------
+    本工具**刻意不提供改变层级的通道**（没有 reparent / 改父）：父子关系是在
+    **如实记录**需求之间的派生事实，不该为了「视图好看」而整形 —— 包括
+    「为了降噪而另立新根」。所以「某支很深 / 某层很宽」不靠改造结构来消解，
+    改用**告诉你它在哪**来消化阅读成本。纪律见 references/discipline.md。
+
+    三个指示器（都带**位置编号**，形如 1.3.2，可在大纲里直接定位）：
+      deepest       最深（未收口）节点 —— 已全部收口的子树在视图里会折叠成一行，
+                    所以「要找的那条深链」必然是还没收口的那部分
+      widest_layer  单层最宽 —— 某个父节点名下**未收口**子节点最多（与 W2 同口径）
+      widest_root   最大的一棵树 —— 某棵根子树的节点总数最多（体量口径，含已收口）
+    """
+    ix = ix or Tree(data)
+    pos = path_map(data, ix) if pos is None else pos
+    nodes = data["nodes"]
+
+    def _live_children(nid):
+        return [c for c in ix.children(nid) if c.get("status") not in TERMINAL_STATUSES]
+
+    def _best(items, key):
+        # 并列时按 id 取小 —— 同一份真源每次输出必须完全一致（否则 diff 噪声）
+        return min(items, key=lambda x: (-key(x), x["id"])) if items else None
+
+    out = {"deepest": None, "widest_layer": None, "widest_root": None}
+
+    n = _best([x for x in nodes if x.get("status") not in TERMINAL_STATUSES],
+              lambda x: ix.depth(x["id"]))
+    if n:
+        out["deepest"] = {"id": n["id"], "title": n.get("title") or "",
+                          "depth": ix.depth(n["id"]), "pos": pos.get(n["id"], "?")}
+
+    n = _best(nodes, lambda x: len(_live_children(x["id"])))
+    if n and _live_children(n["id"]):
+        out["widest_layer"] = {"id": n["id"], "title": n.get("title") or "",
+                               "n": len(_live_children(n["id"])), "pos": pos.get(n["id"], "?")}
+
+    def _size(node):
+        # ⚠ ix.roots() 返回的是**节点字典**（不是 id），与 ix.children(nid) 不同
+        return len(descendants(data, node["id"], ix)) + 1
+
+    r = _best(ix.roots(), _size)
+    if r:
+        out["widest_root"] = {"id": r["id"], "title": r.get("title") or "",
+                              "n": _size(r), "pos": pos.get(r["id"], "?")}
+    return out
+
+
+def fmt_structure_line(h: dict) -> str:
+    """结构概览压成**一行**（check / resume / report / 页眉 共用）。"""
+    d, w, r = h.get("deepest"), h.get("widest_layer"), h.get("widest_root")
+    return " · ".join([
+        "最深 %s（位置 %s · 深度 %d）" % (d["id"], d["pos"], d["depth"]) if d else "最深 —",
+        "最宽层 %s（未收口子 %d）" % (w["id"], w["n"]) if w else "最宽层 —",
+        "最大树 %s（子树 %d 节点）" % (r["id"], r["n"]) if r else "最大树 —",
+    ])
+
+
+def fmt_structure_block(h: dict) -> list:
+    """结构概览区块（TREE.md 等 md 视图用）。**只报位置，不给改造建议。**"""
+    d, w, r = h.get("deepest"), h.get("widest_layer"), h.get("widest_root")
+
+    def _item(label, node, val):
+        if not node:
+            return "- **%s**：—" % label
+        tail = ("　" + node["title"]) if node["title"] else ""
+        return "- **%s**：`%s` 位置 %s · %s%s" % (label, node["id"], node["pos"], val, tail)
+
+    return [
+        "### 结构概览（只报位置；层级是如实记录，不因难读而整形）",
+        "",
+        _item("最深（未收口）", d, "深度 %d" % d["depth"]) if d
+        else "- **最深（未收口）**：—（当前没有未收口节点）",
+        _item("单层最宽", w, "未收口子节点 %d" % w["n"]) if w else "- **单层最宽**：—",
+        _item("最大的一棵树", r, "子树 %d 节点" % r["n"]) if r else "- **最大的一棵树**：—",
+        "",
+    ]
+
+
 # ------------------------------------------------------------------ 校验
 
 def validate(data: dict, ix=None):
@@ -811,17 +900,23 @@ def validate(data: dict, ix=None):
                                len(fresh), ", ".join(fresh[:5]), extra, nid),
                 })
         d = ix.depth(nid)
-        # ⚠️ 只对**非终态**节点告警：`closed` / `dropped` 是历史留痕，它们的深度不构成"该拆分了"的理由；
+        # ⚠️ 只对**非终态**节点告警：`closed` / `dropped` 是历史留痕，它们的深度不构成"该动结构"的理由；
         #    不过滤会让一个已 drop 的空墓碑**永久**挂一条 W1（2026-09-24 实测：重挂节点后 drop 的
         #    旧 id 停在深度 4，每次 check 都报），把人训练成忽略告警。
         #    活跃分支仍会各自被检查到（每个节点都算自己的深度）⇒ 不损失检出能力。
+        # ⚠️ W1 / W2 的定位是**导航提示**，不是"改造层级"的指令：层级在**如实记录**需求之间的
+        #    派生事实，本工具**刻意不提供改父（reparent）的通道**。所以措辞只说"确实这么深/这么多 +
+        #    怎么定位"，绝不说"拆成中间层 / 另立新根"。纪律见 references/discipline.md。
         if d > MAX_DEPTH and n.get("status") not in TERMINAL_STATUSES:
             warns.append({"code": "W1", "id": nid,
-                          "msg": "深度 %d 层 > %d 层：评估是否应升级为独立子项目，或说明拆分位置错位" % (d, MAX_DEPTH)})
+                          "msg": "深度 %d 层 > %d 层：这条派生链确实这么深 —— 层级是**如实记录**，"
+                                 "不要为好看而整形；阅读用「结构概览」按位置编号定位" % (d, MAX_DEPTH)})
         sib = [c for c in ix.children(nid) if c.get("status") not in TERMINAL_STATUSES]
         if len(sib) > MAX_OPEN_SIBLINGS:
             warns.append({"code": "W2", "id": nid,
-                          "msg": "名下未收口子节点 %d 个 > %d：考虑拆分或归并" % (len(sib), MAX_OPEN_SIBLINGS)})
+                          "msg": "名下未收口子节点 %d 个 > %d：这一层确实平铺这么多 —— 不要为好看而"
+                                 "插中间层；可归并**语义重复**的子项，阅读用「结构概览」定位"
+                                 % (len(sib), MAX_OPEN_SIBLINGS)})
         if n.get("status") == "doing":
             unmet = [d2 for d2 in (n.get("depends_on") or []) if idx.get(d2, {}).get("status") != "closed"]
             if unmet:
@@ -929,6 +1024,7 @@ def render_tree(data: dict, ctx=None) -> str:
     ctx = ctx or Ctx(data)
     ix, pm, wm = ctx.ix, ctx.pm, ctx.wm
     lines = md_header("需求树 · %s" % (data.get("project") or ""), data, ctx)
+    lines.extend(fmt_structure_block(ctx.hints()))
     lines.append("缩进即派生层级。已完成全部后代收口的子树折叠为一行。")
     lines.append("")
 
@@ -970,6 +1066,7 @@ def render_active(data: dict, ctx=None) -> str:
     for n in active:
         keep.update(ancestors(data, n["id"], ix))
     lines = md_header("活跃视图 · %s" % (data.get("project") or ""), data, ctx)
+    lines.append("> %s" % fmt_structure_line(ctx.hints()))
     lines.append("只列未收口节点（open / doing / blocked / done），已收口的祖先仅作上下文占位。")
     lines.append("")
 
@@ -1004,6 +1101,7 @@ def render_focus(data: dict, ctx=None) -> str:
     ix, pm, wm, idx = ctx.ix, ctx.pm, ctx.wm, ctx.ix.by_id
     fid = data.get("focus")
     lines = md_header("聚焦视图 · %s" % (data.get("project") or ""), data, ctx)
+    lines.append("> %s" % fmt_structure_line(ctx.hints()))
     if not fid or fid not in idx:
         lines.append("当前无聚焦节点。用 `todoctl focus R-0006` 指定。")
         return "\n".join(lines) + "\n"
@@ -1099,6 +1197,7 @@ def resume_brief(data: dict, ctx=None) -> dict:
         "resume_count": int(data.get("resume_count") or 0),
         "inferred": inferred,
         "stats": ctx.stats,
+        "hints": ctx.hints(),
         "doing": doing_overview(data, ctx),
         "node": None,
         "chain": [],
@@ -1145,6 +1244,7 @@ def resume_md(brief: dict) -> str:
     st = brief["stats"]
     L.append("> 存量 · 节点 %d · 未收口 %d · 阻塞 %d · 最大深度 %d" % (
         st["total"], st["n_unclosed"], st["n_blocked"], st["max_depth"]))
+    L.append("> %s" % fmt_structure_line(brief["hints"]))
     L.append("")
 
     n = brief["node"]
@@ -1269,6 +1369,7 @@ def resume_plain(brief: dict) -> str:
     st = brief["stats"]
     L.append(" 存量  节点 %d · 未收口 %d · 阻塞 %d · 最大深度 %d" % (
         st["total"], st["n_unclosed"], st["n_blocked"], st["max_depth"]))
+    L.append(" " + fmt_structure_line(brief["hints"]))
     L.append("═" * W)
     n = brief["node"]
     if not n:
@@ -1749,6 +1850,7 @@ def dashboard_payload(data: dict, ctx=None) -> dict:
         "generated": now(),
         "focus": data.get("focus") or "",
         "stats": st,
+        "structure": ctx.hints(),
         "nodes": nodes,
     }
 
@@ -2146,6 +2248,7 @@ def cmd_check(a, data, root):
     st = summarize(data, ix)
     print("节点 %d · 已收口 %d · 未收口 %d · 阻塞 %d · 最大深度 %d" % (
         st["total"], st["n_closed"], st["n_unclosed"], st["n_blocked"], st["max_depth"]))
+    print(fmt_structure_line(structure_hints(data, ix)))
     print("")
     if not errors and not warns:
         print("✅ 校验通过，无错误无告警")
@@ -2189,6 +2292,7 @@ def cmd_report(a, data, root):
     print("已放弃      %d" % len(dropped_s))
     print("")
     print("存量：未收口 %d · 阻塞 %d · 最大深度 %d" % (st["n_unclosed"], st["n_blocked"], st["max_depth"]))
+    print(fmt_structure_line(structure_hints(data)))
     errors, warns = validate(data)
     if errors or warns:
         print("")
@@ -2551,6 +2655,10 @@ h1{margin:0 0 4px;font-size:16px;font-weight:500}
 .meta{color:var(--dim);font-size:12px;font-family:ui-monospace,Consolas,monospace}
 .stats{display:flex;flex-wrap:wrap;gap:20px;padding:12px 24px;border-bottom:1px solid var(--line);font-size:12px;color:var(--dim)}
 .stats b{display:block;font-size:17px;font-weight:500;color:var(--fg)}
+.shape{display:flex;flex-wrap:wrap;gap:18px;padding:8px 24px;border-bottom:1px solid var(--line);font-size:12px;color:var(--dim)}
+.shape i{font-style:normal}
+.shape b{color:var(--fg);font-weight:500}
+.shape code{font-size:11px;margin-left:5px}
 .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:12px 24px;border-bottom:1px solid var(--line)}
 .chip{border:1px solid var(--line);border-radius:999px;padding:2px 10px;font-size:12px;color:var(--dim);cursor:pointer;background:transparent}
 .chip[data-on="1"]{color:#1b1b1a;background:var(--fg);border-color:var(--fg)}
@@ -2609,6 +2717,7 @@ overflow:auto;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;line-
 </nav>
 <section id="pane-tree">
 <div class="stats" id="stats"></div>
+<div class="shape" id="shape"></div>
 <div class="bar">
   <span class="chip" data-st="open" data-on="1">未开始</span>
   <span class="chip" data-st="doing" data-on="1">进行中</span>
@@ -2648,7 +2757,7 @@ bench                                      <span class="cm">← ◎ 随时看手
 done R-0006 --note "接口已实现"              <span class="cm">← ◎ 实现完成（≠ 收口）</span>
 close R-0006 --evidence "commit:9f2c1ab" --evidence "test:…"   <span class="cm">← ◎ 验证通过才算收口</span>
 check                                      <span class="cm">← ◎ 体检（有错返回 1）</span></pre>
-<p class="note">五个完整工作流（首次建真源 / 派生新需求 / 推进与收口 / 出视图与巡检 / 每周 rebalance）见 skill 内
+<p class="note">五个完整工作流（首次建真源 / 派生新需求 / 推进与收口 / 出视图与巡检 / 每周巡检）见 skill 内
 <code>references/entry-map.md</code> 第五节。</p>
 
 <h2>三、全部子命令（21 个）与主要选项</h2>
@@ -2706,6 +2815,7 @@ check                                      <span class="cm">← ◎ 体检（有
 <tr><td class="grp">退出码</td><td><code>0</code> 成功 ｜ <code>1</code> <code>check</code>/<code>render</code> 发现真源有错 ｜ <code>2</code> 被强校验或参数校验拒绝。<code>render</code> 在真源有错时<b>不会静默产出空树</b>，别拿错误状态下的视图做判断。</td></tr>
 <tr><td class="grp">全局参数</td><td><code>--root &lt;真源目录&gt;</code>（写在子命令前后都可以）｜ <code>--no-render</code> 关闭自动刷新 ｜ <code>--wait SEC</code> 写锁等待秒数。</td></tr>
 <tr><td class="grp">真源 / 派生物</td><td><b>真源</b>：<code>tree.json</code> <code>journal.jsonl</code> <code>baselines.json</code> <code>snapshots/</code> <code>tree.lock</code> —— 写入只走 CLI。<br><b>派生物</b>：本页等 7 个视图 —— <code>render</code> 覆盖生成，<b>禁止手改</b>。</td></tr>
+<tr><td class="grp">结构概览</td><td><b>最深（未收口）· 单层最宽 · 最大的一棵树</b>（都带位置编号）见 <code>check</code> ／ <code>resume</code> ／各视图页眉；完整区块在 <code>TREE.md</code> 与本页顶部。层级<b>如实记录</b>需求的派生关系 —— 太深 / 太宽靠<b>定位</b>消化，不靠改造结构：本工具<b>没有改父（reparent）通道</b>。</td></tr>
 </table>
 
 </div>
@@ -2796,6 +2906,18 @@ function render(){
     (count>matched
       ? "<div title=\"这些上层节点本身不符合当前筛选，仅为保持树的层级而显示\"><b>+"+(count-matched)+"</b>祖先占位</div>"
       : "");
+  (function(){
+    // 结构概览：只报位置，不改层级（层级如实记录需求派生事实，见 discipline.md）
+    var sh=DATA.structure||{};
+    function one(label,node,val){
+      if(!node) return "<span><i>"+label+"</i> —</span>";
+      return "<span><i>"+label+"</i> <b>"+node.id+"</b><code>"+node.pos+"</code>"+val+"</span>";
+    }
+    document.getElementById("shape").innerHTML=
+      one("最深(未收口)",sh.deepest,sh.deepest?" 深度 "+sh.deepest.depth:"")+
+      one("单层最宽",sh.widest_layer,sh.widest_layer?" 未收口子 "+sh.widest_layer.n:"")+
+      one("最大的一棵树",sh.widest_root,sh.widest_root?" 子树 "+sh.widest_root.n+" 节点":"");
+  })();
   document.getElementById("title").textContent="需求树看板"+(DATA.project?" · "+DATA.project:"");
   document.getElementById("meta").textContent="生成于 "+DATA.generated+"　·　真源 tree.json（本页为派生物，禁止手改）";
 }

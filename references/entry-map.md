@@ -195,10 +195,10 @@ todoctl render        # 覆盖生成 7 个派生物（TREE/ACTIVE/FOCUS/RESUME/B
 todoctl check         # 强校验，有错误返回码 1
 todoctl report --days 7
 ```
-- 日常看 `ACTIVE.md`；**每次开工先 `resume`**；评审/考古看 `TREE.md`；盯着一件事时看 `FOCUS.md`；需要筛选时开 `dashboard.html`
+- 日常看 `ACTIVE.md`；**每次开工先 `resume`**；评审/考古看 `TREE.md`（顶部有「结构概览」：最深 / 最宽层 / 最大的一棵树 + 位置编号）；盯着一件事时看 `FOCUS.md`；需要筛选时开 `dashboard.html`
 
-### 5. 定期 rebalance（每周一次）
+### 5. 定期巡检（每周一次）
 1. `todoctl check` → 先清错误
-2. 看告警：`W1 深度 > 3`、`W2 同父未收口 > 7` → 决定升级为独立子项目、拆分或归并
+2. 看告警：`W1 深度 > 3`、`W2 同父未收口 > 7` → **不改层级**：复核每层派生是否**如实**；阅读靠「结构概览」按位置编号定位（`W2` 另可归并**语义重复**的子项）
 3. `todoctl report --days 7` → 核对阻塞与停滞（`W4` 超过 14 天未更新）
 4. `todoctl render` → 已收口子树自动折叠，主视图恢复清爽

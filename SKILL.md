@@ -111,7 +111,7 @@ agent_created: true
 | 把各线成果封成一个时点 | `baseline --name "…"` | `BASELINE.md` |
 | 本次提交到底写了什么 | `log --since "…" [--line <线ID>]` | 终端 / `--commit-msg` |
 
-- **五个工作流**（首次建真源 / 派生新需求 / 推进与收口 / 出视图与巡检 / 每周 rebalance）见 `entry-map.md` 第五节
+- **五个工作流**（首次建真源 / 派生新需求 / 推进与收口 / 出视图与巡检 / 每周巡检）见 `entry-map.md` 第五节
 - **触发时机与写入纪律**见 `references/discipline.md`
 - ⚠️ `--force` 与 `--override-reason` 是两个**独立**的确认，常被混用 —— `--force` 跳不过假收口检查。
   连同退出码约定，都在 `entry-map.md` 的「全局约定」里
@@ -381,7 +381,7 @@ todoctl restore --date 2026-09-22 --yes   # 退回该日首写之前
 |---|---|
 | **功能与入口索引**（我要做 X → 打哪条命令 / 结果去哪看；全部子命令与选项 + 五个工作流） | `references/entry-map.md` |
 | 字段定义、状态机语义、ID 与编号规则 | `references/schema.md` |
-| 触发时机、写入纪律、rebalance 与脱敏流程 | `references/discipline.md` |
+| 触发时机、写入纪律、巡检与脱敏流程 | `references/discipline.md` |
 
 工具本体：`scripts/todoctl.py`（零第三方依赖，仅标准库）。三个入口完全等价，都只从 `PATH` 找 Python、
 **不含任何写死的安装路径**（换机器、换平台、换用户都不用改）：
