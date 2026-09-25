@@ -3,7 +3,7 @@ name: req-tree
 description: 项目推进中的需求派生与收口的唯一真源 —— 用树形结构记录「需求 → 派生需求 → 再派生」的追溯链，强校验状态流转、收口证据与假收口，并投影出全树/活跃/聚焦三层视图与看板。Use when asked to 记录待办/需求/派生出的新需求、某条需求为什么存在、哪些还没收口、需求越做越多难以追踪、记录表格混乱，或在推进项目时需要同步更新待办真源。
 description_zh: "需求派生树 + 收口真源：不可变 ID 与渲染编号分离、done≠closed、收口必附证据、三层视图、深度/宽度压制告警、假收口阻断。"
 description_en: "Single source of truth for requirement derivation trees and closure: immutable IDs, evidence-gated closure, three layered views, anti-false-closure validation."
-version: 1.3.0
+version: 1.4.0
 display_name: "需求派生树与收口真源"
 display_name_en: "req-tree"
 visibility: "public"
