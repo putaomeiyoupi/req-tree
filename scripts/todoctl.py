@@ -760,13 +760,14 @@ def structure_hints(data: dict, ix=None, pos=None) -> dict:
     n = _best([x for x in nodes if x.get("status") not in TERMINAL_STATUSES],
               lambda x: ix.depth(x["id"]))
     if n:
-        out["deepest"] = {"id": n["id"], "title": n.get("title") or "",
+        out["deepest"] = {"id": n["id"], "title": n.get("title") or "", "status": n.get("status"),
                           "depth": ix.depth(n["id"]), "pos": pos.get(n["id"], "?")}
 
     n = _best(nodes, lambda x: len(_live_children(x["id"])))
     if n and _live_children(n["id"]):
         out["widest_layer"] = {"id": n["id"], "title": n.get("title") or "",
-                               "n": len(_live_children(n["id"])), "pos": pos.get(n["id"], "?")}
+                               "status": n.get("status"), "n": len(_live_children(n["id"])),
+                               "pos": pos.get(n["id"], "?")}
 
     def _size(node):
         # ⚠ ix.roots() 返回的是**节点字典**（不是 id），与 ix.children(nid) 不同
@@ -775,17 +776,33 @@ def structure_hints(data: dict, ix=None, pos=None) -> dict:
     r = _best(ix.roots(), _size)
     if r:
         out["widest_root"] = {"id": r["id"], "title": r.get("title") or "",
-                              "n": _size(r), "pos": pos.get(r["id"], "?")}
+                              "status": r.get("status"), "n": _size(r),
+                              "pos": pos.get(r["id"], "?")}
     return out
+
+
+def _status_tag(d) -> str:
+    """终态状态名（非终态返回空串）。结构概览里出现终态节点**必须标出来** ——
+    否则一个已放弃 / 已收口的父项被当成导航目标会误导（如「最宽层」落在已放弃的父项上）；
+    那种情形另有 W9 如实说明。"""
+    s = (d or {}).get("status")
+    return "已放弃" if s == "dropped" else ("已收口" if s == "closed" else "")
+
+
+def _paren(tag: str, text: str) -> str:
+    return "（%s%s）" % (tag + " · " if tag else "", text)
 
 
 def fmt_structure_line(h: dict) -> str:
     """结构概览压成**一行**（check / resume / report / 页眉 共用）。"""
     d, w, r = h.get("deepest"), h.get("widest_layer"), h.get("widest_root")
     return " · ".join([
-        "最深 %s（位置 %s · 深度 %d）" % (d["id"], d["pos"], d["depth"]) if d else "最深 —",
-        "最宽层 %s（未收口子 %d）" % (w["id"], w["n"]) if w else "最宽层 —",
-        "最大树 %s（子树 %d 节点）" % (r["id"], r["n"]) if r else "最大树 —",
+        "最深 %s%s" % (d["id"], _paren("", "位置 %s · 深度 %d" % (d["pos"], d["depth"]))) if d
+        else "最深 —",
+        "最宽层 %s%s" % (w["id"], _paren(_status_tag(w), "未收口子 %d" % w["n"])) if w
+        else "最宽层 —",
+        "最大树 %s%s" % (r["id"], _paren(_status_tag(r), "子树 %d 节点" % r["n"])) if r
+        else "最大树 —",
     ])
 
 
@@ -797,7 +814,9 @@ def fmt_structure_block(h: dict) -> list:
         if not node:
             return "- **%s**：—" % label
         tail = ("　" + node["title"]) if node["title"] else ""
-        return "- **%s**：`%s` 位置 %s · %s%s" % (label, node["id"], node["pos"], val, tail)
+        tag = _status_tag(node)
+        return "- **%s**：`%s` 位置 %s · %s%s%s" % (
+            label, node["id"], node["pos"], val, ("　← " + tag) if tag else "", tail)
 
     return [
         "### 结构概览（只报位置；层级是如实记录，不因难读而整形）",
@@ -909,14 +928,29 @@ def validate(data: dict, ix=None):
         #    怎么定位"，绝不说"拆成中间层 / 另立新根"。纪律见 references/discipline.md。
         if d > MAX_DEPTH and n.get("status") not in TERMINAL_STATUSES:
             warns.append({"code": "W1", "id": nid,
-                          "msg": "深度 %d 层 > %d 层：这条派生链确实这么深 —— 层级是**如实记录**，"
+                          "msg": "深度 %d 层 > %d 层：这条派生链确实这么深 —— 层级是如实记录，"
                                  "不要为好看而整形；阅读用「结构概览」按位置编号定位" % (d, MAX_DEPTH)})
         sib = [c for c in ix.children(nid) if c.get("status") not in TERMINAL_STATUSES]
-        if len(sib) > MAX_OPEN_SIBLINGS:
+        # ⚠️ W2 只对**活跃**父项说「这一层平铺这么多」——对一个已终结的父项说这句是废话
+        #    （那种情形由下面的 W9 如实说）。告警文案不用 markdown 强调（控制台里 `**` 是噪声）。
+        if len(sib) > MAX_OPEN_SIBLINGS and n.get("status") not in TERMINAL_STATUSES:
             warns.append({"code": "W2", "id": nid,
                           "msg": "名下未收口子节点 %d 个 > %d：这一层确实平铺这么多 —— 不要为好看而"
-                                 "插中间层；可归并**语义重复**的子项，阅读用「结构概览」定位"
+                                 "插中间层；可归并语义重复的子项，阅读用「结构概览」定位"
                                  % (len(sib), MAX_OPEN_SIBLINGS)})
+        # ⚠️ W9：父项已**放弃**、名下却仍有未收口子节点 —— 阈值 0（≥1 即报）。
+        #    `drop` 不做级联：`--force` 只是允许父项独弃，子节点原样留在原地
+        #    ⇒ 这是「归属未定」的**待决事实**（不是过期判断），所以照实长期报、不降噪；
+        #    点名子节点 id 是为了让人能直接定位过去。
+        #    只报 `dropped`：`closed` 的情形里，未被显式接受的后代由 E12 报错；已显式接受的
+        #    （`close_override_ids`）是收口当刻的已记录决定，反复重报等于二次质疑一个已记的判断。
+        if n.get("status") == "dropped" and sib:
+            warns.append({"code": "W9", "id": nid,
+                          "msg": "父项已放弃，但名下仍有 %d 个未收口子节点：%s%s —— 活子挂在已终结的"
+                                 "父项下、归属未定（`drop` 不做级联）；请逐个处理（推进 / 放弃），"
+                                 "或另立节点承载并说明关系"
+                                 % (len(sib), ", ".join(c["id"] for c in sib[:3]),
+                                    " 等" if len(sib) > 3 else "")})
         if n.get("status") == "doing":
             unmet = [d2 for d2 in (n.get("depends_on") or []) if idx.get(d2, {}).get("status") != "closed"]
             if unmet:
@@ -2081,8 +2115,10 @@ def cmd_drop(a, data, root):
         raise Fail("%s 已收口/已放弃" % n["id"])
     unclosed = [d["id"] for d in descendants(data, n["id"]) if d.get("status") not in TERMINAL_STATUSES]
     if unclosed and not a.force:
-        raise Fail("强校验拒绝：%s 仍有 %d 个未收口后代（%s）。级联放弃请加 --force。" % (
-            n["id"], len(unclosed), ", ".join(unclosed)))
+        raise Fail("强校验拒绝：%s 仍有 %d 个未收口后代（%s）。\n"
+                   "  本工具不做级联放弃 —— 子节点的去向要各自留痕。若确认这些后代不由本项承载"
+                   "（要单独处置），可加 --force 允许父项独弃：它们会留在原地并触发 W9 告警，"
+                   "直到逐个处理。" % (n["id"], len(unclosed), ", ".join(unclosed)))
     n["status"] = "dropped"
     n["blocked_by"] = None
     n["notes"].append("%s  放弃：%s" % (now_sec(), a.reason.strip()))
