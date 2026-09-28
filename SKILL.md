@@ -3,7 +3,7 @@ name: req-tree
 description: 项目推进中的需求派生与收口的唯一真源 —— 用树形结构记录「需求 → 派生需求 → 再派生」的追溯链，强校验状态流转、收口证据与假收口，并投影出全树/活跃/聚焦三层视图与看板。Use when asked to 记录待办/需求/派生出的新需求、某条需求为什么存在、哪些还没收口、需求越做越多难以追踪、记录表格混乱，或在推进项目时需要同步更新待办真源。
 description_zh: "需求派生树 + 收口真源：不可变 ID 与渲染编号分离、done≠closed、收口必附证据、三层视图、深度/宽度压制告警、假收口阻断。"
 description_en: "Single source of truth for requirement derivation trees and closure: immutable IDs, evidence-gated closure, three layered views, anti-false-closure validation."
-version: 1.4.1
+version: 1.4.2
 display_name: "需求派生树与收口真源"
 display_name_en: "req-tree"
 visibility: "public"
@@ -352,6 +352,7 @@ todoctl restore --date 2026-09-22 --yes   # 退回该日首写之前
 | 手改 `TREE.md` 补一行 | 改真源（`todoctl update` / `add`）后重跑 `render` |
 | 攒一堆需求最后一起录 | 发现即落库，`why` 才能写准 |
 | 任务做完直接 `close` | 先 `done`，验证通过再 `close` 并附证据 |
+| **决策节点在等「使用者拍板 / 实测确认」时就 `close` 了** | 若**收口条件里含使用者的动作**（「使用者选择后落成 decision」「浏览器实测通过」之类），就**停在 `done`**、等他回复再收 —— 收口证据**事后不可改**，而那条确认此刻还没发生（2026-09-28 实测：修复已提交、但只有使用者能确认现象消失 ⇒ 一直停在 `done`，等他一句"复核没问题"才收）。 |
 | **从 `open` 直接 `done`** | 被拒（"只有 doing 才能标记 done"）⇒ 顺序只能是 **`start` → `done` → `close`**。想少两步可以用 `close --force` 跳过 done 前置检查，但那会**跳过 done 语义、少一条留痕**；线根/需求节点收官建议老实走三连（journal 留有完整生命周期） |
 | 收口后不回头看祖先 | `close` 后必查祖先验收条件是否失效 |
 | 树太深就删节点 | 不要删。用 `drop --reason` 归档，或 `close` 后由折叠机制收进一行 |
@@ -360,6 +361,7 @@ todoctl restore --date 2026-09-22 --yes   # 退回该日首写之前
 | 只改状态、不留 `note` | 下次 `resume` 只能说「还在推进」，说不出卡在哪一句话 → 做一步记一句 |
 | **收口时证据写「整理自既有记录」这类占位串** | **证据在收口后事实上不可变** —— `close` 对已 `closed` 节点直接 `Fail`（"已收口"），`update` 也没有 `--evidence` ⇒ **没有事后补写通道**（只能 `restore` 快照整体回滚）。所以收口当刻就要写**可复核的物证**：`commit:<sha>` / `test:<用例名>` / `doc:<路径>` / `script:<路径>` / `user:<谁>确认`。写「整理自某处」等于给未来留一个**退不掉的假收口** |
 | 收工不记 `--next-step` | 下次开工要多花十分钟重新进入上下文 → 收工时一句话搞定 |
+| **以为 `update --why` 是「在原文后面补一段」** | 它是**整体替换**（`scripts/todoctl.py::cmd_update` 里是 `n[field] = val.strip()`，`title`/`why`/`done_when` 同款）⇒ 想改 why 必须**把全文重写一遍**；只传新增的那半句，原文会被**整段抹掉**（2026-09-28 实测：一天内为追加一句结论，重写了 6 次全文）。**只想追加就用 `note`** —— 它是唯一追加语义的通道。 |
 | **`note` 文本里用反引号** | 从 shell 传参时反引号会被当**命令替换吃掉**（`$` 同理），**静默**、事后极难发现（实测两次）。长文本只用位置参数、**没有** `--file`/stdin ⇒ 文本里别用反引号，标识符直写或用 `「」`；已写坏就补一条校正 note。⚠️ **2026-09-23 一天内被吃掉 3 次（写进本表之后照样踩）⇒ 别再靠自觉，用机械做法**：凡 note 文本含**代码片段 / 反引号 / `$`**，**不要**把它当 shell 参数直接传 —— 改为「Write 写临时 `.txt` → Python 以 `subprocess.run([py, todoctl, "note", "R-xxxx", 文本])` 列表参数传（**不经 shell 解析**）→ 删临时文件并回读」；只有纯中文短文本才可直接传，且传完必须 `grep -F` 回读关键 token |
 | **长文本参数忘了加引号** | shell 按空格切开 ⇒ 报 `unrecognized arguments: <最后一段>`；若文本里含**裸 `/`**，MSYS 还会把它转成 Git 安装路径 ⇒ 报错里冒出 `E:/Program Files/x64/Git/` 这种**毫不相关**的串（2026-09-24 收口 `R-0043` 实测：当刻先怀疑工具，实际是自己漏了引号）。⇒ 证据 / note 文本**一律加引号**；**看到 `E:/Program Files/x64/Git/` 就要立刻联想到「裸 `/` 被 MSYS 转换了」** |
 | **直接按 `why`（触发理由）开工** | `why` 是**立案当刻**的判断，可能已过期。开工第一步应是**先验证前提是否仍成立** —— 本机实测 `R-0083`：`why` 写「判据未定、门禁拦不住」，实测判据早已定、真正的问题在别处（豁免清单两份副本漂出死项）。前提变了就**先更正 `why`/note**，再动手，否则会去修一个不存在的问题 |
