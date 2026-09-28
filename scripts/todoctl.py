@@ -2755,16 +2755,21 @@ overflow:auto;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;line-
 <div class="stats" id="stats"></div>
 <div class="shape" id="shape"></div>
 <div class="bar">
+  <!-- ⭐ 默认筛选的唯一真相 = 下面各 chip 的 data-on（写了 = 默认开，没写 = 默认关）。
+       JS 照此初始化，「重置筛选」也照此复位 ⇒ 改默认只改这里，别去 JS 里再写第二份。
+       默认只开「未开始 / 进行中 / 阻塞」：待办视野先看「还有几件事要做」，
+       已终结的（已完成 / 已收口 / 已放弃）混进来只会让这个数失真，考古时再逐个点开。
+       （2026-09-28 用户要求） -->
   <span class="chip" data-st="open" data-on="1">未开始</span>
   <span class="chip" data-st="doing" data-on="1">进行中</span>
   <span class="chip" data-st="blocked" data-on="1">阻塞</span>
-  <span class="chip" data-st="done" data-on="1">已完成</span>
-  <span class="chip" data-st="closed" data-on="1">已收口</span>
-  <span class="chip" data-st="dropped" data-on="1">已放弃</span>
+  <span class="chip" data-st="done">已完成</span>
+  <span class="chip" data-st="closed">已收口</span>
+  <span class="chip" data-st="dropped">已放弃</span>
   <span class="chip" id="only-active">仅未收口</span>
   <span class="chip" id="warn-only">仅看告警</span>
   <span class="chip" id="leaf-only" data-on="1" title="统计口径：默认只算没有子节点的节点（实际施工项）。关掉则连需求级容器/根一起算。">仅统计叶子</span>
-  <span class="chip" id="reset" title="恢复默认：所有状态都显示，并清空搜索框">重置筛选</span>
+  <span class="chip" id="reset" title="恢复默认：只显示 未开始 / 进行中 / 阻塞，开启「仅统计叶子」，并清空搜索框">重置筛选</span>
   <input type="search" id="q" placeholder="搜索 标题 / ID / 编号 / 派生理由">
 </div>
 <main><ul class="root" id="tree"></ul></main>
@@ -2835,7 +2840,7 @@ check                                      <span class="cm">← ◎ 体检（有
 <h2>五、筛选口径（数字为什么和直觉不一致）</h2>
 <table>
 <tr><th style="width:160px">项</th><th>规则</th></tr>
-<tr><td class="grp">状态标签</td><td>默认<b>全部显示</b>；点一下 = <b>隐藏该状态</b>（<b>不是</b>「只看该状态」）。全关会得到空树，用「重置筛选」一键恢复。</td></tr>
+<tr><td class="grp">状态标签</td><td><b>默认只显示 未开始 / 进行中 / 阻塞</b>；<b>已完成 / 已收口 / 已放弃默认隐藏</b> —— 已终结的项混进来会让「还有几件事要做」失真，考古时再逐个点开。点一下 = <b>切换该状态</b>（<b>不是</b>「只看该状态」）。全关会得到空树，用「重置筛选」一键恢复默认。</td></tr>
 <tr><td class="grp">多条件是「且」</td><td>状态标签 × 「仅未收口」 × 「仅看告警」 × 搜索框，四者同时生效。</td></tr>
 <tr><td class="grp">搜索范围</td><td>只搜 <b>ID / 位置编号 / 标题 / 派生理由 / 收口条件</b>（<b>不含</b>进度记录与收口证据）。</td></tr>
 <tr><td class="grp">⭐ 统计口径</td><td><b>默认只统计叶子节点</b>（没有子节点的 = 实际施工项）。需求级容器与根节点的「收口」回答的是另一个问题（「这条线整体达成了吗」），与「还有几件事要做」混在同一个数里会让后者失真 ⇒ 需要看全量时关掉「仅统计叶子」。</td></tr>
@@ -2861,8 +2866,21 @@ const DATA = __PAYLOAD__;
 const LABEL = {open:"未开始",doing:"进行中",blocked:"阻塞",done:"已完成",closed:"已收口",dropped:"已放弃"};
 const COLOR = {open:"var(--open)",doing:"var(--doing)",blocked:"var(--blocked)",done:"var(--done)",closed:"var(--closed)",dropped:"var(--dropped)"};
 const TERMINAL = {closed:1,dropped:1};
-const S = {status:{},q:"",onlyActive:false,warnOnly:false,leafOnly:true,collapsed:{}};
-["open","doing","blocked","done","closed","dropped"].forEach(function(k){S.status[k]=true});
+// 默认筛选的唯一真相 = 上面 .bar 里各 chip 的 data-on（改默认只改 HTML，别在这里写第二份）。
+// 快照成 DFLT：既用于首屏初始化，也用于「重置筛选」复位 —— 两者共用一份，才不会各复位各的。
+function readDefaults(){
+  var d={status:{},onlyActive:false,warnOnly:false,leafOnly:false};
+  document.querySelectorAll(".chip[data-st]").forEach(function(c){
+    d.status[c.getAttribute("data-st")]=(c.getAttribute("data-on")==="1");
+  });
+  d.onlyActive=document.getElementById("only-active").getAttribute("data-on")==="1";
+  d.warnOnly=document.getElementById("warn-only").getAttribute("data-on")==="1";
+  d.leafOnly=document.getElementById("leaf-only").getAttribute("data-on")==="1";
+  return d;
+}
+var DFLT=readDefaults();
+const S={status:{},q:"",onlyActive:DFLT.onlyActive,warnOnly:DFLT.warnOnly,leafOnly:DFLT.leafOnly,collapsed:{}};
+Object.keys(DFLT.status).forEach(function(k){S.status[k]=DFLT.status[k];});
 const byId={},kids={};
 DATA.nodes.forEach(function(n){byId[n.id]=n;kids[n.parent||""]=kids[n.parent||""]||[];kids[n.parent||""].push(n.id)});
 
@@ -2958,7 +2976,7 @@ function render(){
   document.getElementById("meta").textContent="生成于 "+DATA.generated+"　·　真源 tree.json（本页为派生物，禁止手改）";
 }
 document.querySelectorAll(".chip[data-st]").forEach(function(c){
-  c.title="点击可隐藏 / 显示「"+c.textContent.trim()+"」的节点（默认全显示）";
+  c.title="点击可切换「"+c.textContent.trim()+"」是否显示（不是「只看它」）；默认只显示 未开始 / 进行中 / 阻塞";
   c.onclick=function(){
     var k=c.getAttribute("data-st");S.status[k]=!S.status[k];
     c.setAttribute("data-on",S.status[k]?"1":"0");render();
@@ -2972,13 +2990,14 @@ document.getElementById("leaf-only").onclick=function(){
   S.leafOnly=!S.leafOnly;this.setAttribute("data-on",S.leafOnly?"1":"0");render();};
 document.getElementById("q").oninput=function(){S.q=this.value.trim().toLowerCase();render();};
 document.getElementById("reset").onclick=function(){
-  ["open","doing","blocked","done","closed","dropped"].forEach(function(k){S.status[k]=true;});
-  S.onlyActive=false;S.warnOnly=false;S.leafOnly=true;S.q="";
+  Object.keys(DFLT.status).forEach(function(k){S.status[k]=DFLT.status[k];});
+  S.onlyActive=DFLT.onlyActive;S.warnOnly=DFLT.warnOnly;S.leafOnly=DFLT.leafOnly;S.q="";
   document.getElementById("q").value="";
-  document.querySelectorAll(".chip[data-st]").forEach(function(c){c.setAttribute("data-on","1");});
-  document.getElementById("only-active").setAttribute("data-on","0");
-  document.getElementById("warn-only").setAttribute("data-on","0");
-  document.getElementById("leaf-only").setAttribute("data-on","1");
+  document.querySelectorAll(".chip[data-st]").forEach(function(c){
+    c.setAttribute("data-on",S.status[c.getAttribute("data-st")]?"1":"0");});
+  document.getElementById("only-active").setAttribute("data-on",DFLT.onlyActive?"1":"0");
+  document.getElementById("warn-only").setAttribute("data-on",DFLT.warnOnly?"1":"0");
+  document.getElementById("leaf-only").setAttribute("data-on",DFLT.leafOnly?"1":"0");
   render();
 };
 document.querySelectorAll(".tab").forEach(function(t){
