@@ -7,6 +7,8 @@ venv/
 
 # 开发期工件 —— 不随本体发布（本地仍可运行，只是不进仓库）
 scripts/selftest.py
+# gh CLI 的本机状态（device-id 等）—— 纯本机身份标识，绝不入库
+.local/
 
 # Editors / OS
 .vscode/
