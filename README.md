@@ -239,6 +239,60 @@ alias todoctl="python3 /path/to/req-tree/scripts/todoctl.py"
 
 **要求**：Python 3.8 或更高（仅标准库，无需 `pip install`）。
 
+### 方式三：给项目装上「漏记 / 漏收口」门禁（**强烈建议**）
+
+只装 skill 的话，需求捕捉仍然**靠「记得调用」** —— 而这正是失效发生的地方。
+下面这套机制把提醒下沉到三个**绕不过去**的时刻，不需要任何人记得。
+
+```bash
+# 1) 把门禁脚本放进你的项目（只依赖 Python 标准库）
+cp <req-tree路径>/scripts/reqtree_gap_gate.py <你的项目>/scripts/
+mkdir -p <你的项目>/.githooks
+
+# 2) 生成 hook（只打印不落盘，便于先审阅）
+python <你的项目>/scripts/reqtree_gap_gate.py print-hook
+
+# 3) 确认没问题后写入，并让 hook **跟着仓库走**
+python <你的项目>/scripts/reqtree_gap_gate.py print-hook > <你的项目>/.githooks/pre-commit
+cd <你的项目> && git config core.hooksPath .githooks
+git add scripts/reqtree_gap_gate.py .githooks/pre-commit && git commit -m "chore: 接入需求树门禁"
+```
+
+第 3 步的 `git config core.hooksPath .githooks` 是**仓库级配置**，把它和那两个文件一起提交，
+**别人 clone 下来执行这一行就自动生效** —— 不需要装 skill，也不需要改任何本地路径。
+
+> ⚠️ 门禁**只打印提示，绝不阻断提交**（退出码恒 0）。
+> 这是刻意的：阻断会变成「来不及登记就提交不了」的新摩擦，反而更容易被 `--no-verify` 绕开。
+
+### 方式四：让宿主每次会话都点到名（`AGENTS.md`）
+
+门禁只在**提交那一刻**说话。如果你还希望「开工时就把规则摆出来」，
+在项目根写一个 `AGENTS.md`（宿主启动时本来就会读它，**不额外加载 skill、不花工具调用**）：
+
+```markdown
+## 需求真源
+
+本项目需求真源在 `docs/requirements/`（唯一真源，视图禁手改）。
+
+- 用户提出**新需求 / 派生需求**时，先用 `scripts/reqtodo.sh add` 登记，别等做完。
+- 推进已有节点用 `start` → `done` → `close`（**done ≠ closed**）。
+- 不确定某条需求为什么存在时，先 `todoctl show <ID>` 看派生理由。
+```
+
+只需要三行，不必粘贴整份 `SKILL.md`。
+
+### 四层触发，按可靠性递增
+
+| 层 | 载体 | 何时说话 | 谁来装 |
+|---|---|---|---|
+| 1 | `AGENTS.md` 三行点名 | 会话开始时 | 项目维护者（一次性） |
+| 2 | `core.hooksPath` pre-commit | **提交那一刻**（绕不过去） | 项目维护者（一次性） |
+| 3 | `audit` 定时巡检 | 每晚 / 每周 | 定时任务（可选） |
+| 4 | 直接调用 `search` / `audit` | 随时 | 人或 agent 主动 |
+
+前两层解决**漏记**，第 3 层解决**漏收口**（当天看不出，只能隔夜扫）。
+`gate` 只看本次提交，**拦不住历史漏收口** —— 两者互不重叠，须成对使用。
+
 ### 方式二：接入你的 AI 宿主
 
 本仓库只带**一份** `SKILL.md`（带 frontmatter 的标准 skill 定义）。

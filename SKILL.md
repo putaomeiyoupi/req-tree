@@ -109,9 +109,33 @@ agent_created: true
 | 体检 | `check`（有错返回 `1`） | 终端 |
 | **找回记过的内容**（含进度轨迹） | `search <关键词>` | 终端（命中 note 会给 `进度#序号`） |
 | **查谁「做完了却没收口」** | `audit` | 终端（只报线索，需人工核 git） |
+| **提交前自查有没有漏记** | `scripts/reqtree_gap_gate.py gate` | 终端（只提醒，不阻断） |
 | 出全部视图 | `render` | 7 个派生物 |
 | 把各线成果封成一个时点 | `baseline --name "…"` | `BASELINE.md` |
 | 本次提交到底写了什么 | `log --since "…" [--line <线ID>]` | 终端 / `--commit-msg` |
+
+### 🔴 别指望「记得调用」—— 让提醒下沉到绕不过去的时刻
+
+实测三类失效（做完了才补录 / 实现落地却停在 `open` / 做完十几天没 `close`）
+**全部源于「没主动调用 req-tree」**。所以本 skill 附带一个**零依赖**门禁脚本
+`scripts/reqtree_gap_gate.py`：
+
+| 模式 | 判据 | 覆盖 |
+|---|---|---|
+| `gate` | 本次提交含代码改动、但真源未同步 | **漏记**（当天就能发现） |
+| `audit` | 状态非 closed、且 `done_when` 物证 token 在代码里大量命中 | **漏收口**（当天看不出，只能隔夜扫） |
+
+⚠️ 二者**互不重叠**：`gate` 只看本次提交，拦不住历史漏收口；`audit` 只看历史。
+⚠️ **退出码恒 0，只打印不阻断** —— 阻断只会制造新摩擦并被 `--no-verify` 绕开。
+
+把它接进项目（一次装好，之后不用记得）：
+
+```bash
+python scripts/reqtree_gap_gate.py print-hook > .githooks/pre-commit
+git config core.hooksPath .githooks      # 提交这一行 ⇒ 别人 clone 下来即生效
+```
+
+完整安装步骤（含 `AGENTS.md` 点名写法）见 `README.md`「方式三 / 方式四」。
 
 ### 🔴 `search` —— 笔记写了要能读回来
 
