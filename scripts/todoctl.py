@@ -66,7 +66,7 @@ STALE_DOING_DAYS = 7     # doing 超过该天数未更新即告警（搁置）
 NOT_STARTED = ("open", "blocked")   # 「计划中的下一步」若处于这两态，视为尚未开工
 SNAPSHOT_DIR = "snapshots"          # 自动快照目录（无 git 时的回滚依据）
 SNAPSHOT_KEEP_DAYS = 30             # 按天快照保留天数
-READONLY_CMDS = ("check", "report", "show", "log", "bench")
+READONLY_CMDS = ("check", "report", "show", "log", "bench", "search", "audit")
 """**真·不写盘**的命令 —— 不加写锁。
 
 ⚠ 判据是「是否写盘」，不是「是否改真源」。`render`（写 7 个视图）与 `export`（写 `public/`）
@@ -1871,6 +1871,10 @@ def dashboard_payload(data: dict, ctx=None) -> dict:
             "depth": ix.depth(n["id"]),
             "doneWhen": n.get("done_when") or "",
             "evidence": n.get("close_evidence") or [],
+            # 搜索用扁平串：数组直接字符串化会得到 "a,b"，子串匹配不可靠。
+            # notes 是最高频写入的字段（实测占真源体积 56%），必须可搜。
+            "notesText": " ".join(n.get("notes") or []),
+            "evidenceText": " ".join(n.get("close_evidence") or []),
             "blockedBy": n.get("blocked_by") or "",
             "dependsOn": n.get("depends_on") or [],
             "created": n.get("created") or "",
@@ -2171,10 +2175,39 @@ def cmd_update(a, data, root):
     return 0
 
 
+def read_note_payload(spec):
+    """从 `--file` 读长文本 —— 绕开 shell 引号地狱的可靠通道。
+
+    为什么需要（2026-09-28 实测）：note 正文里出现中文直双引号时，
+    经 Git Bash 传给 Python 会被截断，命令**静默不执行**却看似成功。
+    长文本只能走文件/stdin，不能靠「记得给外层加引号」。
+    """
+    if spec == "-":
+        data = sys.stdin.read()
+    else:
+        p = Path(spec)
+        if not p.exists():
+            raise Fail("--file 指定的文件不存在：%s" % spec)
+        try:
+            data = p.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            raise Fail("--file 不是 UTF-8 文本：%s（note 内容含中文，务必 UTF-8）" % spec)
+    data = data.strip()
+    if not data:
+        raise Fail("从 %s 读到的是空内容" % ("stdin" if spec == "-" else spec))
+    return data
+
+
 def cmd_note(a, data, root):
     """给节点追加一条进度记录 —— 跨次场景恢复的关键素材。"""
     n = need_node(data, a.id)
-    text = " ".join(a.text).strip()
+    if getattr(a, "file", None):
+        # --file 与位置参数互斥：混用时无法判断哪个才是本意，静默取其一更危险。
+        if a.text:
+            raise Fail("--file 与位置参数不能同时给（二选一）：长文本一律走 --file")
+        text = read_note_payload(a.file)
+    else:
+        text = " ".join(a.text).strip()
     if not text:
         raise Fail("note 内容不能为空")
     n["notes"].append("%s  %s" % (now_sec(), text))
@@ -2393,6 +2426,154 @@ def cmd_log(a, data, root):
             print("   %s  %-7s %-8s %s" % (
                 r["ts"], r["op"], r["id"] or "-",
                 (r.get("detail") or "") + ("   " + dt if dt else "")))
+    return 0
+
+
+# ------------------------------------------------------------------ 检索 / 回填对账
+
+def _clip(s, limit):
+    """把命中片段裁到可读长度 —— 保留首尾，中间省略（长 note 的关键信息常在尾部）。"""
+    s = " ".join((s or "").split())
+    if limit and len(s) > limit:
+        half = (limit - 3) // 2
+        return s[:half] + " … " + s[-half:]
+    return s
+
+
+def cmd_search(a, data, root):
+    """**全文检索** —— 含 `notes` 进度轨迹。
+
+    为什么必须有这个：`note` 是最高频的写入动作（实测占全部写入的 30%），`notes`
+    也是 `tree.json` 里**体积最大的字段**（实测 56%）。但 `show` 不渲染 notes、
+    七个视图也不导出 note 正文 ⇒ 不检索就等于「写了但读不回来」。
+    """
+    kw = (a.keyword or "").strip()
+    if not kw:
+        raise Fail("检索词不能为空。用法：todoctl search <关键词>")
+    scope = a.in_ or "all"
+    # 大小写不敏感、子串匹配：需求检索是人工找线索，不是精确查询。
+    low = kw.lower()
+    idx, pm = by_id(data), path_map(data)
+
+    def hit(field, text):
+        return bool(text) and low in str(text).lower()
+
+    rows = []
+    for n in data["nodes"]:
+        nid = n.get("id") or ""
+        # 先算节点级命中（标题/编号/理由/验收/证据）—— 命中即整条收进来，
+        # 否则只在「确实命中检索词」的 note 上做片段级命中。
+        node_hit = (hit("title", n.get("title")) or hit("id", nid)
+                    or hit("path", pm.get(nid)) or hit("why", n.get("why"))
+                    or hit("done_when", n.get("done_when"))
+                    or (scope in ("all", "evidence")
+                        and any(hit("evidence", e) for e in (n.get("close_evidence") or []))))
+        matched_notes = []
+        if scope in ("all", "notes"):
+            for i, x in enumerate(n.get("notes") or []):
+                if hit("note", x):
+                    matched_notes.append((i, x))
+        if scope == "notes" and not node_hit and not matched_notes:
+            continue
+        if scope != "notes" and not node_hit and not matched_notes:
+            continue
+        if not node_hit and not matched_notes:
+            continue
+        rows.append((n, node_hit, matched_notes))
+
+    if a.status:
+        want = set(a.status)
+        rows = [r for r in rows if r[0].get("status") in want]
+    if a.kind:
+        rows = [r for r in rows if r[0].get("kind") in set(a.kind)]
+
+    if not rows:
+        print("（没有匹配「%s」的记录；范围 --in %s）" % (kw, scope))
+        return 0
+
+    total = sum(1 + len(m) for _, nh, m in rows)
+    print("检索「%s」· 范围 %s · 命中 %d 个节点 / %d 处"
+          % (kw, scope, len(rows), total))
+    print("")
+    for n, node_hit, matched_notes in rows:
+        # 同时给「位置编号 + 节点 ID」：位置编号便于读结构，ID 才能直接复制去
+        # `show` / `note` 用。只给编号的话，拿到结果没法定位到具体节点。
+        print("%s · %s  %s  [%s / %s]%s"
+              % (pm.get(n["id"], "?"), n["id"], n.get("title"), n.get("status"), n.get("kind"),
+                 "" if node_hit else "  （仅进度轨迹命中）"))
+        # 节点级命中才打印这些字段 —— 否则「仅 note 命中」时打印一堆无关的 why 反而干扰阅读。
+        if node_hit and (a.in_ in (None, "all") or a.in_ != "notes"):
+            if a.in_ in (None, "all", "why") and hit("why", n.get("why")):
+                print("    触发理由  …%s" % _clip(n.get("why"), a.context))
+            if a.in_ in (None, "all", "done") and hit("done_when", n.get("done_when")):
+                print("    收口条件  …%s" % _clip(n.get("done_when"), a.context))
+            if scope in ("all", "evidence"):
+                for e in (n.get("close_evidence") or []):
+                    if hit("evidence", e):
+                        print("    收口证据  %s" % e)
+        for i, x in matched_notes:
+            print("    进度#%-3d …%s" % (i + 1, _clip(x, a.context)))
+        print("")
+    return 0
+
+
+def cmd_audit(a, data, root):
+    """**回填对账** —— 找出「实现早已落地、状态却还停在 open/done」的高危候选。
+
+    为什么要有这个：`check` 的 W4/W5 只能报「多久没动」，报不出「动过了却没收口」。
+    真源与实现之间的这类漂移**没有任何时间维度信号**——项目里只能靠人工全树扫描
+    （实测：19 条过一遍、发现 1 条漏收口）。本命令把「该人工看的」收敛成一张短名单：
+    按「最后一次记录时间」升序排，越靠上越可疑。
+
+    ⚠️ 它**只提供线索、不下结论** —— 「该节点是否真的漏收口」必须人去核 git。
+    """
+    idx, pm = by_id(data), path_map(data)
+    limit = max(0, int(a.days or 0))
+
+    cands = []
+    for n in data["nodes"]:
+        if n.get("status") not in ACTIVE_STATUSES:
+            continue
+        ds = days_since(n.get("updated"))
+        age = ds if ds is not None else 99999
+        # 只看「已超过门槛」的：门槛内的节点本就在正常推进中，报出来只是噪声。
+        if limit and ds is not None and ds <= limit:
+            continue
+        flags = []
+        # done 已过门槛仍未收口 = 最典型的「做完了没收口」。
+        if n.get("status") == "done":
+            flags.append("done 未收口")
+        # open 却已经记下「实现类」证据（物证），几乎等于「做完了只是没回填」。
+        if n.get("status") in ("open", "blocked"):
+            has_proof = any(str(e).split(":", 1)[0] in ("commit", "test", "file")
+                            for e in (n.get("close_evidence") or []))
+            if has_proof:
+                flags.append("已有物证但未收口")
+        # 反复自述未完成 = 上次就卡住了。
+        notes = n.get("notes") or []
+        if len(notes) >= 3 and ds is not None and ds > limit:
+            flags.append("多次记录未收口")
+        if flags:
+            cands.append((age, n, flags))
+
+    cands.sort(key=lambda x: -x[0])
+    if not cands:
+        print("（%d 天以上未更新的活跃节点：无）" % (limit or STALE_DAYS))
+        # ⚠️ 空结果**同样**要声明只报线索：否则「没报出来」会被读成「已核对过、都没问题」，
+        # 而 audit 的判据本来就只是「够不够久没动」，不代表真的一致。
+        print("⚠️ 只提供线索：没有候选**不等于**已核对无误 —— audit 只按停滞天数筛，不看实现是否落地。")
+        return 0
+
+    print("回填对账候选（%d 天以上未更新的活跃节点，共 %d 个 · 越靠上越可疑）" % (limit or STALE_DAYS, len(cands)))
+    print("⚠️ 只提供线索：是否真的漏收口要人工核 git，别照单全收。")
+    print("   （audit 只按停滞天数筛，不判断实现是否真的落地 —— 它缩小人工扫描范围，不替代核对。）")
+    print("")
+    print("| 停滞 | 节点 | 状态 | 标题 | 信号 |")
+    print("|---|---|---|---|---|")
+    for age, n, flags in cands:
+        print("| %s 天 | `%s` | %s | %s | %s |" % (
+            age if age < 99999 else "?", n["id"], n.get("status"),
+            _clip(n.get("title"), 40), "；".join(flags)))
     return 0
 
 
@@ -2770,7 +2951,7 @@ overflow:auto;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;line-
   <span class="chip" id="warn-only">仅看告警</span>
   <span class="chip" id="leaf-only" data-on="1" title="统计口径：默认只算没有子节点的节点（实际施工项）。关掉则连需求级容器/根一起算。">仅统计叶子</span>
   <span class="chip" id="reset" title="恢复默认：只显示 未开始 / 进行中 / 阻塞，开启「仅统计叶子」，并清空搜索框">重置筛选</span>
-  <input type="search" id="q" placeholder="搜索 标题 / ID / 编号 / 派生理由">
+  <input type="search" id="q" placeholder="搜索 标题 / ID / 编号 / 理由 / 验收 / 进度轨迹">
 </div>
 <main><ul class="root" id="tree"></ul></main>
 </section>
@@ -2785,6 +2966,7 @@ overflow:auto;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;line-
 <tr><td class="grp">状态</td><td>开始、标记阻塞、解除阻塞、实现完成、收口、放弃</td><td><code>start</code> <code>block</code> <code>unblock</code> <code>done</code> <code>close</code> <code>drop</code></td></tr>
 <tr><td class="grp">恢复</td><td>拿回上次现场、看手头同时几件事</td><td><code>resume</code> <code>bench</code></td></tr>
 <tr><td class="grp">查看</td><td>查单条细节、全量体检、按线抽变更、周报、盯一条分支</td><td><code>show</code> <code>check</code> <code>log</code> <code>report</code> <code>focus</code></td></tr>
+<tr><td class="grp">检索</td><td>全文检索（<strong>含进度轨迹</strong>）、回填对账：谁「做完了却没回填」</td><td><code>search</code> <code>audit</code></td></tr>
 <tr><td class="grp">治理</td><td>封板成不可变时点、按快照回滚、跨进程写锁</td><td><code>baseline</code> <code>restore</code> <code>tree.lock</code></td></tr>
 <tr><td class="grp">导出</td><td>出 7 个视图、导出脱敏公开副本</td><td><code>render</code> <code>export</code></td></tr>
 </table>
@@ -2889,7 +3071,7 @@ function matches(n){
   if(S.onlyActive && TERMINAL[n.status]) return false;
   if(S.warnOnly && !(n.warns&&n.warns.length)) return false;
   if(S.q){
-    var hay=(n.id+" "+n.path+" "+n.title+" "+(n.why||"")+" "+(n.doneWhen||"")).toLowerCase();
+    var hay=(n.id+" "+n.path+" "+n.title+" "+(n.why||"")+" "+(n.doneWhen||"")+" "+(n.notesText||"")+" "+(n.evidenceText||"")).toLowerCase();
     if(hay.indexOf(S.q)<0) return false;
   }
   return true;
@@ -3095,7 +3277,10 @@ def build_parser():
 
     s = sub.add_parser("note", help="给节点追加一条进度记录（跨次恢复的关键素材）")
     s.add_argument("id")
-    s.add_argument("text", nargs="+", help="这次做到哪 / 发现了什么，可直接不引号连写")
+    s.add_argument("text", nargs="*", help="这次做到哪 / 发现了什么，可直接不引号连写（与 --file 二选一）")
+    s.add_argument("--file", metavar="PATH",
+                   help="从文件读长文本；PATH 为 - 时读 stdin。"
+                        "长文本**一律走这里** —— 正文含中文直双引号时经 shell 传参会静默截断")
     s.add_argument("--next-step", dest="next_step", help="同时更新「下一步要做什么」")
     s.add_argument("--next", metavar="ID", help="同时更新「计划中的下一步」指向的节点")
     s.set_defaults(func=cmd_note)
@@ -3110,6 +3295,22 @@ def build_parser():
     s = sub.add_parser("show", help="查看单节点详情")
     s.add_argument("id")
     s.set_defaults(func=cmd_show)
+
+    s = sub.add_parser("search", help="全文检索（含 notes 进度轨迹）—— 「写了但读不回来」的补救入口")
+    s.add_argument("keyword", help="关键词（大小写不敏感，子串匹配）")
+    s.add_argument("--in", dest="in_", choices=["all", "notes", "why", "evidence"],
+                   help="限定检索范围：all（默认，标题/编号/理由/验收/证据/进度轨迹）"
+                        "/ notes（只搜进度轨迹）/ why（只搜触发理由）/ evidence（只搜收口证据）")
+    s.add_argument("--context", type=int, default=160, metavar="N",
+                   help="命中片段保留字符数（默认 160；超长时中间省略，首尾都留）")
+    s.add_argument("--status", action="append", help="只看这些状态，可重复")
+    s.add_argument("--kind", action="append", help="只看这些类型，可重复")
+    s.set_defaults(func=cmd_search)
+
+    s = sub.add_parser("audit", help="回填对账：找出「做完了却没回填状态」的高危候选（只报线索，不下结论）")
+    s.add_argument("--days", type=int, default=STALE_DAYS, metavar="N",
+                   help="停滞门槛天数（默认 %d，与 check 的 W4 同源）" % STALE_DAYS)
+    s.set_defaults(func=cmd_audit)
 
     s = sub.add_parser("check", help="强校验：ID/父/环/状态与证据一致性/假收口")
     s.set_defaults(func=cmd_check)
@@ -3177,7 +3378,8 @@ def normalize_argv(argv):
     return moved + rest
 
 
-NO_JOURNAL = ("init", "check", "render", "export", "report", "show", "log", "bench")
+NO_JOURNAL = ("init", "check", "render", "export", "report", "show", "log", "bench",
+              "search", "audit")
 
 
 def journal_entry_for(a, data):
@@ -3243,7 +3445,9 @@ def main(argv=None):
                     print("  ⚠ 变更日志写入失败（真源已保存）：%s" % exc, file=sys.stderr)
             return rc
     except Fail as exc:
-        print("✖ 拒绝写入：%s" % exc, file=sys.stderr)
+        # 只读命令报错时不能说「拒绝写入」—— 那会让用户误以为真源被改动了。
+        prefix = "只读命令参数不对" if readonly else "拒绝写入"
+        print("✖ %s：%s" % (prefix, exc), file=sys.stderr)
         return 2
 
 

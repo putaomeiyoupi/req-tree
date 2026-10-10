@@ -188,7 +188,7 @@ todoctl check                      # ⑧ 体检
 | 写 | `add` `update` `note` |
 | 状态 | `start` `block` `unblock` `done` `close` `drop` |
 | 恢复 | `resume` `bench` |
-| 查看 | `show` `check` `log` `report` |
+| 查看 | `show` `check` `log` `report` `search` `audit` |
 | 治理 | `baseline` `restore` |
 | 导出 | `render` `export` |
 
@@ -197,12 +197,24 @@ todoctl check                      # ⑧ 体检
 几个值得单独知道的：
 
 ```bash
+todoctl search "回填"                      # 全文检索，**含 notes 进度轨迹**
+todoctl search "commit:abc" --in evidence  # 只搜收口证据
+todoctl note R-0016 --file -  < note.txt   # 长文本走 stdin，绕开 shell 引号截断
+todoctl audit                              # 回填对账：谁「做完了却没收口」
 todoctl bench                              # 台面：手头有哪几件事在同时推
 todoctl baseline --name "v0.3 首版"        # 把当前各线成果封成一个不可变时点
 todoctl restore --last --yes               # 退回上一次写入之前
 todoctl log --line R-0031 --commit-msg     # 按需求线抽提交信息草稿
 todoctl export                             # 导出可公开副本（恒脱敏）
 ```
+
+### 三个高频痛点各有专门入口
+
+| 痛点 | 入口 | 为什么单列一个命令 |
+|---|---|---|
+| **写了却读不回来** | `search` | `note` 是最高频的写入动作，`notes` 也是真源里体积最大的字段（实测占 56%）。但 `show` 不渲染 notes、七个视图也不导出 note 正文 ⇒ 不给检索通道，笔记就等于只写不读。 |
+| **长文本经 shell 传参被截断** | `note --file` | 正文含中文直双引号时，命令会**静默不执行**却看似成功（2026-09-28 实测）。长文本一律走文件/stdin，不靠「记得加引号」。 |
+| **做完了却没回填状态** | `audit` | `check` 的 W4/W5 只报「多久没动」，报不出「动过了却没收口」—— 真源与实现之间的漂移**没有任何时间维度信号**。`audit` 给出高危候选短名单，但**只报线索、不下结论**，是否漏收口仍要人工核 git。 |
 
 ---
 

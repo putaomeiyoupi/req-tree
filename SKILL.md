@@ -3,7 +3,7 @@ name: req-tree
 description: 项目推进中的需求派生与收口的唯一真源 —— 用树形结构记录「需求 → 派生需求 → 再派生」的追溯链，强校验状态流转、收口证据与假收口，并投影出全树/活跃/聚焦三层视图与看板。Use when asked to 记录待办/需求/派生出的新需求、某条需求为什么存在、哪些还没收口、需求越做越多难以追踪、记录表格混乱，或在推进项目时需要同步更新待办真源。
 description_zh: "需求派生树 + 收口真源：不可变 ID 与渲染编号分离、done≠closed、收口必附证据、三层视图、深度/宽度压制告警、假收口阻断。"
 description_en: "Single source of truth for requirement derivation trees and closure: immutable IDs, evidence-gated closure, three layered views, anti-false-closure validation."
-version: 1.4.3
+version: 1.5.0
 display_name: "需求派生树与收口真源"
 display_name_en: "req-tree"
 visibility: "public"
@@ -107,9 +107,40 @@ agent_created: true
 | **看手头同时有几件事** | `bench` | `BENCH.md` |
 | 实现完成 → 验证后收口 | `done <ID>` → `close <ID> --evidence "…"` | `TREE.md`（`✅`） |
 | 体检 | `check`（有错返回 `1`） | 终端 |
+| **找回记过的内容**（含进度轨迹） | `search <关键词>` | 终端（命中 note 会给 `进度#序号`） |
+| **查谁「做完了却没收口」** | `audit` | 终端（只报线索，需人工核 git） |
 | 出全部视图 | `render` | 7 个派生物 |
 | 把各线成果封成一个时点 | `baseline --name "…"` | `BASELINE.md` |
 | 本次提交到底写了什么 | `log --since "…" [--line <线ID>]` | 终端 / `--commit-msg` |
+
+### 🔴 `search` —— 笔记写了要能读回来
+
+`note` 是**最高频**的写入动作，`notes` 也是 `tree.json` 里**体积最大**的字段
+（实测某项目 190 KB / 334 KB ≈ **56%**）。但 `show` **不渲染 notes**，七个视图也**不导出
+note 正文** —— 不给检索通道，笔记就等于只写不读。
+
+```bash
+todoctl search "回填"                       # 全字段（默认）
+todoctl search "commit:abc" --in evidence   # 只搜收口证据
+todoctl search "空白页" --in notes           # 只搜进度轨迹
+todoctl search "迁移" --status open --kind task
+```
+
+看板顶部的搜索框**同样覆盖 note 正文与收口证据**（与本命令同源）。
+
+### 🔴 `audit` —— 补上 `check` 看不见的那类漂移
+
+`check` 的 W4/W5 能报「多久没动」，**报不出「动过了却没收口」**。真源与实现之间的
+这类漂移**没有任何时间维度信号** —— 项目里只能靠人工全树扫描（实测：19 条过一遍、
+发现 1 条漏收口）。
+
+```bash
+todoctl audit              # 超过 14 天未更新的活跃节点，按停滞天数排序
+todoctl audit --days 30    # 放宽门槛
+```
+
+⚠️ **它只提供线索、不下结论** —— 「是否真的漏收口」必须人去核 git。
+看到候选就顺手收口，是把工具当裁决；正确用法是**拿它当人工扫描的收窄名单**。
 
 - **五个工作流**（首次建真源 / 派生新需求 / 推进与收口 / 出视图与巡检 / 每周巡检）见 `entry-map.md` 第五节
 - **触发时机与写入纪律**见 `references/discipline.md`
@@ -127,16 +158,28 @@ agent_created: true
 ```
 开工：todoctl resume             # 一条命令拿回现场
 过程中：todoctl note R-0007 这次做到哪 发现了什么
+长文本：todoctl note R-0007 --file -  < note.txt    # 绕开 shell 引号地狱
 收工：todoctl note R-0007 收尾 --next-step "明天先跑一遍 XX 用例"
 ```
 
 `note` 是**唯一**能留住「过程」的手段。没有 note，下次 `resume` 只能告诉你「这条需求还在推进中」，却说不出卡在哪一句话上。
 
-⚠️ **`note` / `add` 的长文本只能走位置参数，没有 `--file` / stdin 通道** ⇒ 文本里的
-**反引号会被 shell 当命令替换吃掉**（`$` 同理），且**不会报错**、事后极难发现
-（本机实测两次：`R-0080` 与 `R-0088` 的一批取证 note 里，代码片段整段消失）。
-对策：① 文本里**不要用反引号**，标识符直接写、或用 `「」`；② 已经写坏了就**补一条校正 note**
-（`note` 追加语义，不改历史）；③ 需要引用代码就描述位置（`app/x.py:123`）而非贴片段。
+🔴 **`note` 的长文本一律走 `--file`**（`--file -` 读 stdin，`--file 路径` 读文件）。
+shell 传参会静默吃掉内容 —— **反引号**被当命令替换（`$` 同理），**中文直双引号**会让
+Python 字符串截断（本机实测：`note` / `done` 静默不执行却看似成功）。
+两者都**不报错**、事后极难发现（实测两次：`R-0080` 与 `R-0088` 的一批取证 note 里，
+代码片段整段消失）。
+
+```bash
+# 长文本 / 含引号的文本：写文件再读
+todoctl note R-0007 --file /tmp/note.txt
+# 或管道
+printf '%s' "$内容" | todoctl note R-0007 --file -
+```
+
+⚠️ `--file` 与位置参数**互斥**（混用时无法判断哪个才是本意 ⇒ 拒绝）。
+短文本仍可直接写，但**不要用反引号**，标识符直接写或用 `「」`；
+需要引用代码就描述位置（`app/x.py:123`）而非贴片段。
 
 ⚠️ **已收口的节点仍可 `note`** —— 这是**被鼓励**的做法：收口后才发现的新证据/失效的旧断言，
 用 `note` 补记而不是把节点 `restore` 重开。状态不受影响（实测 `R-0059/0060/0061/0062/0087`）。

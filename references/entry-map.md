@@ -94,14 +94,14 @@ todoctl restore --list                                    ← 看可用快照
 todoctl check | render | report --days 7
 ```
 
-### 全部子命令（21 个）
+### 全部子命令（23 个）
 
 | 组 | 命令 | 主要选项 |
 |---|---|---|
 | 建 | `init` | `--project` |
 | 写 | `add` | `--parent` `--title` `--why` `--done-when` `--kind` `--depends-on` `--internal` |
 | 写 | `update` | `--title` `--why` `--done-when` `--next-step` `--next` `--kind` `--depends-on` `--internal` `--external` |
-| 写 | `note` | `--next-step` `--next` |
+| 写 | `note` | `--file` `--next-step` `--next` |
 | 状态 | `start` | `--force` |
 | 状态 | `block` | `--reason` |
 | 状态 | `unblock` | `--force` |
@@ -111,11 +111,32 @@ todoctl check | render | report --days 7
 | 恢复 | `resume` / `bench` | — |
 | 查看 | `show` / `check` | — |
 | 查看 | `log` | `--line` `--since` `--limit` `--commit-msg` |
+| 查看 | `search` | `--in`（`all`/`notes`/`why`/`evidence`）`--context` `--status` `--kind` |
+| 治理 | `audit` | `--days` |
 | 治理 | `baseline` | `--name` `--note` `--list` `--diff [ID]` |
 | 治理 | `restore` | `--list` `--last` `--file` `--date` `--yes`（必填） |
 | 导出 | `render` | `--out` |
 | 导出 | `export` | `--out` |
 | 巡检 | `report` | `--days` |
+
+### 检索 / 回填对账类详解（v1.5.0 新增）
+
+| 命令 | 作用 |
+|---|---|
+| `search <关键词>` | **全文检索，含 `notes` 进度轨迹**。大小写不敏感、子串匹配；命中 note 时打印 `进度#序号` + 片段。**只读，不写真源** |
+| `search --in notes` | 只搜进度轨迹（`--in why` 只搜触发理由 / `--in evidence` 只搜收口证据 / 默认 `all`） |
+| `search --context N` | 命中片段保留字符数（默认 160，超长时**中间省略、首尾都留** —— 长 note 的关键信息常在尾部） |
+| `search --status X --kind Y` | 按状态 / 类型过滤，均可重复 |
+| `note <id> --file PATH` | 从文件读长文本；`PATH` 为 `-` 时读 **stdin**。与位置参数**互斥**。长文本一律走这里 —— 正文含中文直双引号时经 shell 传参会**静默截断**（2026-09-28 实测） |
+| `audit [--days N]` | **回填对账**：列出超过 N 天（默认 14，与 `check` 的 W4 同源）未更新的活跃节点，按停滞天数升序，并标注信号：`done 未收口` / `已有物证但未收口` / `多次记录未收口`。⚠️ **只提供线索、不下结论**，是否真漏收口必须人工核 git |
+
+**为什么需要这两个命令**（2026-10-10 实测数据）：
+
+- `note` 是最高频的写入动作（1221 次写入里占 365 次 ≈ 30%），`notes` 也是 `tree.json`
+  里**体积最大的字段**（190 KB / 334 KB ≈ 56%）。但 `show` 不渲染 notes、七个视图也不导出
+  note 正文 ⇒ 不给检索通道，笔记就等于**只写不读**。
+- `check` 的 W4/W5 能报「多久没动」，**报不出「动过了却没收口」** —— 真源与实现之间的
+  漂移没有任何时间维度信号。`audit` 把「该人工看的」收敛成一张短名单。
 
 ### 治理类（封板 / 回滚 / 并发）详解
 
