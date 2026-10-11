@@ -1,1 +1,4 @@
 {"ts": "2026-10-11 18:48:44", "op": "add", "id": "R-0001", "line": "R-0001", "detail": "", "delta": {"R-0001": {"added": true, "status": [null, "open"]}}}
+{"ts": "2026-10-11 18:53:22", "op": "start", "id": "R-0001", "line": "R-0001", "detail": "", "delta": {"R-0001": {"status": ["open", "doing"]}}}
+{"ts": "2026-10-11 18:53:22", "op": "done", "id": "R-0001", "line": "R-0001", "detail": "", "delta": {"R-0001": {"status": ["doing", "done"]}}}
+{"ts": "2026-10-11 18:53:22", "op": "close", "id": "R-0001", "line": "R-0001", "detail": "commit:c25af7b / user:putaomeiyoupi 2026-10-11 确认 config active、路由 401 认证围栏正常、右侧栏 Tab 已出现", "delta": {"R-0001": {"status": ["done", "closed"]}}}

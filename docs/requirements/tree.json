@@ -13,11 +13,14 @@
       "title": "把 req-tree 搬进 DSH 右侧栏",
       "why": "需求只能靠命令行看，切换窗口才能知道哪些没收口",
       "done_when": "右侧栏能直接看到需求树、需求线进度与告警，且不写真源",
-      "status": "open",
+      "status": "closed",
       "created": "2026-10-11",
-      "updated": "2026-10-11 18:48:44",
-      "closed_at": null,
-      "close_evidence": [],
+      "updated": "2026-10-11 18:53:22",
+      "closed_at": "2026-10-11",
+      "close_evidence": [
+        "commit:c25af7b",
+        "user:putaomeiyoupi 2026-10-11 确认 config active、路由 401 认证围栏正常、右侧栏 Tab 已出现"
+      ],
       "close_override": null,
       "close_override_ids": [],
       "blocked_by": null,
@@ -25,8 +28,10 @@
       "next": null,
       "depends_on": [],
       "internal": false,
-      "notes": []
+      "notes": [
+        "2026-10-11 18:53:22  插件已装入 desktop profile 并激活；右侧栏 Tab 实测可见；只读（无写入控件）；告警通路在 fixture 上验过"
+      ]
     }
   ],
-  "updated": "2026-10-11 18:48:44"
+  "updated": "2026-10-11 18:53:22"
 }

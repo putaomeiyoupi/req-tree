@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "project": "dsh-req-tree",
+  "next_seq": 2,
+  "focus": null,
+  "last_resume": null,
+  "resume_count": 0,
+  "nodes": [
+    {
+      "id": "R-0001",
+      "parent": null,
+      "kind": "requirement",
+      "title": "把 req-tree 搬进 DSH 右侧栏",
+      "why": "需求只能靠命令行看，切换窗口才能知道哪些没收口",
+      "done_when": "右侧栏能直接看到需求树、需求线进度与告警，且不写真源",
+      "status": "doing",
+      "created": "2026-10-11",
+      "updated": "2026-10-11 18:53:22",
+      "closed_at": null,
+      "close_evidence": [],
+      "close_override": null,
+      "close_override_ids": [],
+      "blocked_by": null,
+      "next_step": null,
+      "next": null,
+      "depends_on": [],
+      "internal": false,
+      "notes": []
+    }
+  ],
+  "updated": "2026-10-11 18:53:22"
+}
