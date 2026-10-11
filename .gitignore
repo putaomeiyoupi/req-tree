@@ -15,3 +15,13 @@ scripts/selftest.py
 .idea/
 .DS_Store
 Thumbs.db
+
+# --- dsh 插件 ---
+# 构建产物：由 scripts/build-client.mjs 从 lib/client.js 生成，不入库
+plugin/lib/client.bundle.js
+# pnpm 打包产物
+*.tgz
+# 依赖：由 pnpm install 还原，不入库（pnpm-lock.yaml 入库）
+plugin/node_modules/
+# 运行时锁文件（todoctl 设计为常驻，进程退出由系统释放）
+docs/requirements/tree.lock

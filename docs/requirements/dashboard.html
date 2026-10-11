@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>需求树看板</title>
+<style>
+:root{--bg:#1b1b1a;--panel:#242423;--line:#3a3a38;--fg:#e9e7e2;--dim:#a3a19b;
+--open:#b4b2a9;--doing:#ef9f27;--blocked:#f09595;--done:#85b7eb;--closed:#5dcaa5;--dropped:#888780}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--fg);font:14px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{padding:20px 24px 12px;border-bottom:1px solid var(--line)}
+h1{margin:0 0 4px;font-size:16px;font-weight:500}
+.meta{color:var(--dim);font-size:12px;font-family:ui-monospace,Consolas,monospace}
+.stats{display:flex;flex-wrap:wrap;gap:20px;padding:12px 24px;border-bottom:1px solid var(--line);font-size:12px;color:var(--dim)}
+.stats b{display:block;font-size:17px;font-weight:500;color:var(--fg)}
+.shape{display:flex;flex-wrap:wrap;gap:18px;padding:8px 24px;border-bottom:1px solid var(--line);font-size:12px;color:var(--dim)}
+.shape i{font-style:normal}
+.shape b{color:var(--fg);font-weight:500}
+.shape code{font-size:11px;margin-left:5px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:12px 24px;border-bottom:1px solid var(--line)}
+.chip{border:1px solid var(--line);border-radius:999px;padding:2px 10px;font-size:12px;color:var(--dim);cursor:pointer;background:transparent}
+.chip[data-on="1"]{color:#1b1b1a;background:var(--fg);border-color:var(--fg)}
+input[type=search]{background:var(--panel);border:1px solid var(--line);border-radius:8px;color:var(--fg);padding:4px 10px;font-size:12px;min-width:220px}
+main{padding:16px 24px 90px}
+ul{list-style:none;margin:0;padding-left:20px}
+ul.root{padding-left:0}
+li{margin:2px 0}
+.row{display:flex;gap:8px;align-items:baseline;padding:3px 8px;border-radius:6px}
+.row:hover{background:var(--panel)}
+.tw{width:14px;flex:none;color:var(--dim);cursor:pointer;text-align:center;font-size:11px;user-select:none}
+.pid{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--dim);flex:none}
+.ttl{flex:1 1 auto;min-width:0}
+.st{font-size:11px;flex:none;padding:0 8px;border-radius:999px;border:1px solid currentColor;white-space:nowrap}
+.kd{font-size:11px;color:var(--dim);flex:none}
+.why{color:var(--dim);font-size:12px;margin:0 0 6px 54px;padding-left:10px;border-left:2px solid var(--line)}
+.warn{color:var(--doing)}
+.hide{display:none}
+.empty{color:var(--dim);padding:44px 0;text-align:center}
+/* 仅为保持层级而显示的祖先：本身不符合当前筛选条件 ⇒ 视觉变淡，悬停恢复 */
+li.anc>.row{opacity:.5}
+li.anc>.row:hover{opacity:1}
+/* ---------- 标签页 ---------- */
+.tabs{display:flex;gap:4px;padding:0 24px;border-bottom:1px solid var(--line)}
+.tab{padding:8px 14px;font-size:13px;color:var(--dim);cursor:pointer;border-bottom:2px solid transparent;user-select:none}
+.tab:hover{color:var(--fg)}
+.tab[data-on="1"]{color:var(--fg);border-bottom-color:var(--fg)}
+/* ---------- 使用说明页 ---------- */
+.doc{padding:18px 24px 90px;max-width:1200px}
+.doc h2{font-size:14px;font-weight:500;margin:24px 0 10px}
+.doc h2:first-child{margin-top:0}
+.doc p{color:var(--dim);font-size:12.5px;margin:8px 0}
+.doc table{width:100%;border-collapse:collapse;font-size:12.5px;margin:10px 0 6px}
+.doc th,.doc td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+.doc th{color:var(--dim);font-weight:500;background:var(--panel)}
+.doc td.grp{font-weight:500;white-space:nowrap}
+.doc code{font-family:ui-monospace,Consolas,monospace;font-size:12px;background:var(--panel);
+border:1px solid var(--line);border-radius:5px;padding:1px 5px;white-space:nowrap}
+/* 非命令的代码标识（如状态名）——刻意不用 <code>，避免被 L18「命令必须真实存在」的正则误判 */
+.doc .mono{font-family:ui-monospace,Consolas,monospace;font-size:12px;background:var(--panel);
+border:1px solid var(--line);border-radius:5px;padding:1px 5px;white-space:nowrap;color:var(--dim)}
+.doc pre{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;
+overflow:auto;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;line-height:1.8;margin:8px 0}
+.doc pre .cm{color:var(--dim)}
+.doc .note{color:var(--dim);font-size:12px;margin-top:6px;padding-left:10px;border-left:2px solid var(--line)}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">需求树看板</h1>
+  <div class="meta" id="meta"></div>
+</header>
+<nav class="tabs">
+  <span class="tab" data-pane="tree" data-on="1">需求树</span>
+  <span class="tab" data-pane="help">使用说明</span>
+</nav>
+<section id="pane-tree">
+<div class="stats" id="stats"></div>
+<div class="shape" id="shape"></div>
+<div class="bar">
+  <!-- ⭐ 默认筛选的唯一真相 = 下面各 chip 的 data-on（写了 = 默认开，没写 = 默认关）。
+       JS 照此初始化，「重置筛选」也照此复位 ⇒ 改默认只改这里，别去 JS 里再写第二份。
+       默认只开「未开始 / 进行中 / 阻塞」：待办视野先看「还有几件事要做」，
+       已终结的（已完成 / 已收口 / 已放弃）混进来只会让这个数失真，考古时再逐个点开。
+       （2026-09-28 用户要求） -->
+  <span class="chip" data-st="open" data-on="1">未开始</span>
+  <span class="chip" data-st="doing" data-on="1">进行中</span>
+  <span class="chip" data-st="blocked" data-on="1">阻塞</span>
+  <span class="chip" data-st="done">已完成</span>
+  <span class="chip" data-st="closed">已收口</span>
+  <span class="chip" data-st="dropped">已放弃</span>
+  <span class="chip" id="only-active">仅未收口</span>
+  <span class="chip" id="warn-only">仅看告警</span>
+  <span class="chip" id="leaf-only" data-on="1" title="统计口径：默认只算没有子节点的节点（实际施工项）。关掉则连需求级容器/根一起算。">仅统计叶子</span>
+  <span class="chip" id="reset" title="恢复默认：只显示 未开始 / 进行中 / 阻塞，开启「仅统计叶子」，并清空搜索框">重置筛选</span>
+  <input type="search" id="q" placeholder="搜索 标题 / ID / 编号 / 理由 / 验收 / 进度轨迹">
+</div>
+<main><ul class="root" id="tree"></ul></main>
+</section>
+<section id="pane-help" hidden>
+<div class="doc">
+
+<h2>一、这工具能做什么（按能力分组）</h2>
+<table>
+<tr><th style="width:64px">组</th><th>能力</th><th style="width:330px">命令</th></tr>
+<tr><td class="grp">建</td><td>给项目立唯一真源</td><td><code>init</code></td></tr>
+<tr><td class="grp">写</td><td>记新需求 / 派生需求、改标题理由验收条件、随手记进度</td><td><code>add</code> <code>update</code> <code>note</code></td></tr>
+<tr><td class="grp">状态</td><td>开始、标记阻塞、解除阻塞、实现完成、收口、放弃</td><td><code>start</code> <code>block</code> <code>unblock</code> <code>done</code> <code>close</code> <code>drop</code></td></tr>
+<tr><td class="grp">恢复</td><td>拿回上次现场、看手头同时几件事</td><td><code>resume</code> <code>bench</code></td></tr>
+<tr><td class="grp">查看</td><td>查单条细节、全量体检、按线抽变更、周报、盯一条分支</td><td><code>show</code> <code>check</code> <code>log</code> <code>report</code> <code>focus</code></td></tr>
+<tr><td class="grp">检索</td><td>全文检索（<strong>含进度轨迹</strong>）、回填对账：谁「做完了却没回填」</td><td><code>search</code> <code>audit</code></td></tr>
+<tr><td class="grp">治理</td><td>封板成不可变时点、按快照回滚、跨进程写锁</td><td><code>baseline</code> <code>restore</code> <code>tree.lock</code></td></tr>
+<tr><td class="grp">导出</td><td>出 7 个视图、导出脱敏公开副本</td><td><code>render</code> <code>export</code></td></tr>
+</table>
+
+<h2>二、怎么用（最常用的一条路径）</h2>
+<pre>resume                                     <span class="cm">← ◎ 开工第一件事：拿回上次现场（RESUME.md）</span>
+add --parent R-0006 --title "…" --why "…" --done-when "…"   <span class="cm">← ◎ 发现新问题当场落库</span>
+start R-0006                               <span class="cm">← ◎ 开始做（需 done_when；祖先不得已收口）</span>
+note R-0006 做到哪 发现了什么                 <span class="cm">← ◎ 做一步记一句（免引号）</span>
+bench                                      <span class="cm">← ◎ 随时看手头同时有几件事（BENCH.md）</span>
+done R-0006 --note "接口已实现"              <span class="cm">← ◎ 实现完成（≠ 收口）</span>
+close R-0006 --evidence "commit:9f2c1ab" --evidence "test:…"   <span class="cm">← ◎ 验证通过才算收口</span>
+check                                      <span class="cm">← ◎ 体检（有错返回 1）</span></pre>
+<p class="note">五个完整工作流（首次建真源 / 派生新需求 / 推进与收口 / 出视图与巡检 / 每周巡检）见 skill 内
+<code>references/entry-map.md</code> 第五节。</p>
+
+<h2>三、全部子命令（21 个）与主要选项</h2>
+<table>
+<tr><th style="width:64px">组</th><th style="width:210px">命令</th><th>主要选项</th></tr>
+<tr><td class="grp">建</td><td><code>init</code></td><td><code>--project</code></td></tr>
+<tr><td class="grp">写</td><td><code>add</code></td><td><code>--parent</code> <code>--title</code> <code>--why</code> <code>--done-when</code> <code>--kind</code> <code>--depends-on</code> <code>--internal</code></td></tr>
+<tr><td class="grp">写</td><td><code>update</code></td><td><code>--title</code> <code>--why</code> <code>--done-when</code> <code>--next-step</code> <code>--next</code> <code>--kind</code> <code>--depends-on</code> <code>--internal</code> <code>--external</code></td></tr>
+<tr><td class="grp">写</td><td><code>note</code></td><td><code>--next-step</code> <code>--next</code></td></tr>
+<tr><td class="grp">状态</td><td><code>start</code></td><td><code>--force</code></td></tr>
+<tr><td class="grp">状态</td><td><code>block</code></td><td><code>--reason</code></td></tr>
+<tr><td class="grp">状态</td><td><code>unblock</code></td><td><code>--force</code></td></tr>
+<tr><td class="grp">状态</td><td><code>done</code></td><td><code>--note</code></td></tr>
+<tr><td class="grp">状态</td><td><code>close</code></td><td><code>--evidence</code>（可重复 / 必填）<code>--override-reason</code> <code>--force</code></td></tr>
+<tr><td class="grp">状态</td><td><code>drop</code></td><td><code>--reason</code> <code>--force</code></td></tr>
+<tr><td class="grp">恢复</td><td><code>resume</code> / <code>bench</code></td><td>—</td></tr>
+<tr><td class="grp">查看</td><td><code>show</code> / <code>check</code> / <code>focus</code></td><td>—</td></tr>
+<tr><td class="grp">查看</td><td><code>log</code></td><td><code>--line</code> <code>--since</code> <code>--limit</code> <code>--commit-msg</code></td></tr>
+<tr><td class="grp">治理</td><td><code>baseline</code></td><td><code>--name</code> <code>--note</code> <code>--list</code> <code>--diff [ID]</code></td></tr>
+<tr><td class="grp">治理</td><td><code>restore</code></td><td><code>--list</code> <code>--last</code> <code>--file</code> <code>--date</code> <code>--yes</code>（必填）</td></tr>
+<tr><td class="grp">巡检</td><td><code>report</code></td><td><code>--days</code></td></tr>
+<tr><td class="grp">导出</td><td><code>render</code> / <code>export</code></td><td><code>--out</code></td></tr>
+</table>
+
+<h2>四、状态定义（6 个）</h2>
+<table>
+<tr><th style="width:86px">状态</th><th style="width:96px">看板标签</th><th>含义</th><th style="width:300px">进入条件</th></tr>
+<tr><td><span class="mono">open</span></td><td>未开始</td><td>已记录，未推进</td><td><code>add</code></td></tr>
+<tr><td><span class="mono">doing</span></td><td>进行中</td><td>正在处理</td><td>需 <code>done_when</code>；依赖已收口；<b>祖先不得是已收口 / 已放弃</b>（可用 <code>--force</code> 放行，但留 <code>W7</code> 告警）</td></tr>
+<tr><td><span class="mono">blocked</span></td><td>阻塞</td><td>受阻停滞</td><td>必须给 <code>--reason</code></td></tr>
+<tr><td><span class="mono">done</span></td><td>已完成</td><td><b>实现完成，待验证</b></td><td>从 <span class="mono">doing</span> 转来</td></tr>
+<tr><td><span class="mono">closed</span></td><td>已收口</td><td><b>已验证收口</b></td><td>从 <span class="mono">done</span>；≥1 条证据；未被显式接受的未收口后代为 0</td></tr>
+<tr><td><span class="mono">dropped</span></td><td>已放弃</td><td>主动放弃</td><td>必须给 <code>--reason</code></td></tr>
+</table>
+<p class="note"><b>两个关键区分</b>：① <span class="mono">done</span> ≠ <span class="mono">closed</span> ——「我改完了」不等于「这件事结束了」。
+② <b>未收口 = open + doing + blocked + done</b>（即除 <span class="mono">closed</span> / <span class="mono">dropped</span> 外的全部），
+所以统计栏的「未收口」通常<b>大于</b>「未开始」——它们不是同一个数。</p>
+
+<h2>五、筛选口径（数字为什么和直觉不一致）</h2>
+<table>
+<tr><th style="width:160px">项</th><th>规则</th></tr>
+<tr><td class="grp">状态标签</td><td><b>默认只显示 未开始 / 进行中 / 阻塞</b>；<b>已完成 / 已收口 / 已放弃默认隐藏</b> —— 已终结的项混进来会让「还有几件事要做」失真，考古时再逐个点开。点一下 = <b>切换该状态</b>（<b>不是</b>「只看该状态」）。全关会得到空树，用「重置筛选」一键恢复默认。</td></tr>
+<tr><td class="grp">多条件是「且」</td><td>状态标签 × 「仅未收口」 × 「仅看告警」 × 搜索框，四者同时生效。</td></tr>
+<tr><td class="grp">搜索范围</td><td>只搜 <b>ID / 位置编号 / 标题 / 派生理由 / 收口条件</b>（<b>不含</b>进度记录与收口证据）。</td></tr>
+<tr><td class="grp">⭐ 统计口径</td><td><b>默认只统计叶子节点</b>（没有子节点的 = 实际施工项）。需求级容器与根节点的「收口」回答的是另一个问题（「这条线整体达成了吗」），与「还有几件事要做」混在同一个数里会让后者失真 ⇒ 需要看全量时关掉「仅统计叶子」。</td></tr>
+<tr><td class="grp">⭐ 祖先占位</td><td>为不让树断裂，匹配节点的<b>上层节点会被一并显示</b>——它们本身<b>不符合</b>当前筛选，故用<b>变淡</b>样式标出；统计栏也据此拆成「匹配筛选」与「祖先占位」两个数，而不是一个含糊的合计。</td></tr>
+</table>
+
+<h2>六、约定与退出码</h2>
+<table>
+<tr><th style="width:190px">项</th><th>规则</th></tr>
+<tr><td class="grp">状态流转</td><td><code>open → doing → done → closed</code>；<code>doing ⇄ blocked</code>；任意非终态 <code>→ dropped</code>。<b>done（改完了）≠ closed（已验证收口）</b>。</td></tr>
+<tr><td class="grp">前置要求</td><td><code>start</code> / <code>unblock</code> 需 <code>done_when</code>，且祖先不得已收口 / 已放弃；<code>block</code> / <code>drop</code> 需 <code>--reason</code>；<code>close</code> 需 <code>--evidence</code>。</td></tr>
+<tr><td class="grp">两个确认别混用</td><td><code>--force</code> 只跳过「未 done 不能收口」的状态检查，<b>跳不过假收口检查</b>；<code>--override-reason</code> 才放行「仍有未收口后代」。两个都踩到时要<b>同时给</b>。</td></tr>
+<tr><td class="grp">退出码</td><td><code>0</code> 成功 ｜ <code>1</code> <code>check</code>/<code>render</code> 发现真源有错 ｜ <code>2</code> 被强校验或参数校验拒绝。<code>render</code> 在真源有错时<b>不会静默产出空树</b>，别拿错误状态下的视图做判断。</td></tr>
+<tr><td class="grp">全局参数</td><td><code>--root &lt;真源目录&gt;</code>（写在子命令前后都可以）｜ <code>--no-render</code> 关闭自动刷新 ｜ <code>--wait SEC</code> 写锁等待秒数。</td></tr>
+<tr><td class="grp">真源 / 派生物</td><td><b>真源</b>：<code>tree.json</code> <code>journal.jsonl</code> <code>baselines.json</code> <code>snapshots/</code> <code>tree.lock</code> —— 写入只走 CLI。<br><b>派生物</b>：本页等 7 个视图 —— <code>render</code> 覆盖生成，<b>禁止手改</b>。</td></tr>
+<tr><td class="grp">结构概览</td><td><b>最深（未收口）· 单层最宽 · 最大的一棵树</b>（都带位置编号）见 <code>check</code> ／ <code>resume</code> ／各视图页眉；完整区块在 <code>TREE.md</code> 与本页顶部。层级<b>如实记录</b>需求的派生关系 —— 太深 / 太宽靠<b>定位</b>消化，不靠改造结构：本工具<b>没有改父（reparent）通道</b>。</td></tr>
+</table>
+
+</div>
+</section>
+<script>
+const DATA = {"project": "dsh-req-tree", "generated": "2026-10-11 18:48", "focus": "", "stats": {"total": 1, "n_closed": 0, "n_unclosed": 1, "n_blocked": 0, "n_doing": 0, "max_depth": 0, "counts": {"open": 1, "doing": 0, "blocked": 0, "done": 0, "closed": 0, "dropped": 0}}, "structure": {"deepest": {"id": "R-0001", "title": "把 req-tree 搬进 DSH 右侧栏", "status": "open", "depth": 0, "pos": "1"}, "widest_layer": null, "widest_root": {"id": "R-0001", "title": "把 req-tree 搬进 DSH 右侧栏", "status": "open", "n": 1, "pos": "1"}}, "nodes": [{"id": "R-0001", "parent": "", "title": "把 req-tree 搬进 DSH 右侧栏", "why": "需求只能靠命令行看，切换窗口才能知道哪些没收口", "status": "open", "kind": "requirement", "kindCn": "需求", "path": "1", "depth": 0, "doneWhen": "右侧栏能直接看到需求树、需求线进度与告警，且不写真源", "evidence": [], "notesText": "", "evidenceText": "", "blockedBy": "", "dependsOn": [], "created": "2026-10-11", "updated": "2026-10-11 18:48:44", "closedAt": "", "warns": []}]};
+const LABEL = {open:"未开始",doing:"进行中",blocked:"阻塞",done:"已完成",closed:"已收口",dropped:"已放弃"};
+const COLOR = {open:"var(--open)",doing:"var(--doing)",blocked:"var(--blocked)",done:"var(--done)",closed:"var(--closed)",dropped:"var(--dropped)"};
+const TERMINAL = {closed:1,dropped:1};
+// 默认筛选的唯一真相 = 上面 .bar 里各 chip 的 data-on（改默认只改 HTML，别在这里写第二份）。
+// 快照成 DFLT：既用于首屏初始化，也用于「重置筛选」复位 —— 两者共用一份，才不会各复位各的。
+function readDefaults(){
+  var d={status:{},onlyActive:false,warnOnly:false,leafOnly:false};
+  document.querySelectorAll(".chip[data-st]").forEach(function(c){
+    d.status[c.getAttribute("data-st")]=(c.getAttribute("data-on")==="1");
+  });
+  d.onlyActive=document.getElementById("only-active").getAttribute("data-on")==="1";
+  d.warnOnly=document.getElementById("warn-only").getAttribute("data-on")==="1";
+  d.leafOnly=document.getElementById("leaf-only").getAttribute("data-on")==="1";
+  return d;
+}
+var DFLT=readDefaults();
+const S={status:{},q:"",onlyActive:DFLT.onlyActive,warnOnly:DFLT.warnOnly,leafOnly:DFLT.leafOnly,collapsed:{}};
+Object.keys(DFLT.status).forEach(function(k){S.status[k]=DFLT.status[k];});
+const byId={},kids={};
+DATA.nodes.forEach(function(n){byId[n.id]=n;kids[n.parent||""]=kids[n.parent||""]||[];kids[n.parent||""].push(n.id)});
+
+function matches(n){
+  if(!S.status[n.status]) return false;
+  if(S.onlyActive && TERMINAL[n.status]) return false;
+  if(S.warnOnly && !(n.warns&&n.warns.length)) return false;
+  if(S.q){
+    var hay=(n.id+" "+n.path+" "+n.title+" "+(n.why||"")+" "+(n.doneWhen||"")+" "+(n.notesText||"")+" "+(n.evidenceText||"")).toLowerCase();
+    if(hay.indexOf(S.q)<0) return false;
+  }
+  return true;
+}
+function visibleSet(){
+  var vis={};
+  DATA.nodes.forEach(function(n){ if(matches(n)){ vis[n.id]=1; var p=n.parent; var guard=0; while(p&&guard++<200){ vis[p]=1; p=byId[p]?byId[p].parent:""; } } });
+  return vis;
+}
+function el(tag,cls,txt){var e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e;}
+function render(){
+  var vis=visibleSet(), host=document.getElementById("tree");
+  host.innerHTML="";var count=0,matched=0;
+  function walk(id,depth){
+    if(!vis[id]) return null;
+    var n=byId[id], hasKids=(kids[id]||[]).length>0;
+    var li=el("li");
+    var row=el("div","row");
+    var tw=el("span","tw",hasKids?(S.collapsed[id]?"▸":"▾"):"");
+    if(hasKids) tw.onclick=function(){S.collapsed[id]=!S.collapsed[id];render();};
+    row.appendChild(tw);
+    row.appendChild(el("span","pid",n.path+"  "+n.id));
+    var t=el("span","ttl",n.title);row.appendChild(t);
+    if(n.warns&&n.warns.length){var w=el("span","kd warn","⚠");w.title=n.warns.join("\n");row.appendChild(w);}
+    row.appendChild(el("span","kd",n.kindCn));
+    var st=el("span","st",LABEL[n.status]||n.status);st.style.color=COLOR[n.status];row.appendChild(st);
+    if(DATA.focus===n.id){var f=el("span","kd","★聚焦");row.appendChild(f);}
+    li.appendChild(row);
+    if(n.why){li.appendChild(el("div","why","派生理由："+n.why));}
+    if(n.status==="blocked"&&n.blockedBy){li.appendChild(el("div","why","阻塞于："+n.blockedBy));}
+    if(n.status==="closed"&&n.evidence&&n.evidence.length){li.appendChild(el("div","why","收口证据："+n.evidence.join(" · ")));}
+    if(n.doneWhen){li.appendChild(el("div","why","收口条件："+n.doneWhen));}
+    // 区分「真匹配」与「仅为保持树结构而带上来的祖先」——后者本身不符合当前筛选条件，
+    // 若不标出来，用户会看到「筛掉了某状态、树里却还有该状态」的错觉（2026-09-23 实测反馈）。
+    if(matches(n)){matched++;}
+    else{li.className="anc";row.title="仅为保持层级而显示的上层节点（本身不符合当前筛选条件）";}
+    count++;
+    if(hasKids&&!S.collapsed[id]){
+      var ul=el("ul");
+      // ⚠️ 必须滤掉未匹配的子节点：walk 被过滤时返回 null，
+      //    appendChild(null) 会抛 "parameter 1 is not of type 'Node'" 并**中断整个 render**
+      //    ⇒ 树直接消失（2026-09-22 实测：点一次状态标签、或搜任意词即触发）。
+      (kids[id]||[]).forEach(function(c){var x=walk(c,depth+1);if(x)ul.appendChild(x);});
+      if(ul.children.length) li.appendChild(ul);
+    }
+    return li;
+  }
+  (kids[""]||[]).forEach(function(r){var x=walk(r,0);if(x)host.appendChild(x);});
+  if(!count){var e=el("div","empty","没有匹配的节点 —— 检查上方状态标签是否被全部关掉，或清空搜索框");host.appendChild(e);}
+  var s=DATA.stats;
+  // 统计口径：默认只算**叶子**（无子节点 = 实际施工项）。需求级容器 / 根的「收口」回答的是另一个
+  // 问题（「这条线整体达成了吗」），与「还有几件事要做」混在一个数里会让后者失真
+  // （2026-09-23 用户反馈：中间节点和根无意义）⇒ 拆成可切换的口径。
+  var sc={total:0,unclosed:0,doing:0,blocked:0,closed:0};
+  DATA.nodes.forEach(function(n){
+    if(S.leafOnly && (kids[n.id]||[]).length) return;
+    sc.total++;
+    if(TERMINAL[n.status]) sc.closed++; else sc.unclosed++;
+    if(n.status==="doing") sc.doing++;
+    if(n.status==="blocked") sc.blocked++;
+  });
+  document.getElementById("stats").innerHTML=
+    "<div><b>"+sc.total+"</b>"+(S.leafOnly?"叶子节点":"全部节点")+"</div>"+
+    "<div><b>"+sc.unclosed+"</b>未收口</div>"+
+    "<div><b>"+sc.doing+"</b>进行中</div><div><b>"+sc.blocked+"</b>阻塞</div>"+
+    "<div><b>"+sc.closed+"</b>已收口</div><div><b>"+s.max_depth+"</b>最大深度</div>"+
+    "<div><b>"+matched+"</b>匹配筛选</div>"+
+    (count>matched
+      ? "<div title=\"这些上层节点本身不符合当前筛选，仅为保持树的层级而显示\"><b>+"+(count-matched)+"</b>祖先占位</div>"
+      : "");
+  (function(){
+    // 结构概览：只报位置，不改层级（层级如实记录需求派生事实，见 discipline.md）
+    var sh=DATA.structure||{};
+    function one(label,node,val){
+      if(!node) return "<span><i>"+label+"</i> —</span>";
+      return "<span><i>"+label+"</i> <b>"+node.id+"</b><code>"+node.pos+"</code>"+val+"</span>";
+    }
+    document.getElementById("shape").innerHTML=
+      one("最深(未收口)",sh.deepest,sh.deepest?" 深度 "+sh.deepest.depth:"")+
+      one("单层最宽",sh.widest_layer,sh.widest_layer?" 未收口子 "+sh.widest_layer.n:"")+
+      one("最大的一棵树",sh.widest_root,sh.widest_root?" 子树 "+sh.widest_root.n+" 节点":"");
+  })();
+  document.getElementById("title").textContent="需求树看板"+(DATA.project?" · "+DATA.project:"");
+  document.getElementById("meta").textContent="生成于 "+DATA.generated+"　·　真源 tree.json（本页为派生物，禁止手改）";
+}
+document.querySelectorAll(".chip[data-st]").forEach(function(c){
+  c.title="点击可切换「"+c.textContent.trim()+"」是否显示（不是「只看它」）；默认只显示 未开始 / 进行中 / 阻塞";
+  c.onclick=function(){
+    var k=c.getAttribute("data-st");S.status[k]=!S.status[k];
+    c.setAttribute("data-on",S.status[k]?"1":"0");render();
+  };
+});
+document.getElementById("only-active").onclick=function(){
+  S.onlyActive=!S.onlyActive;this.setAttribute("data-on",S.onlyActive?"1":"0");render();};
+document.getElementById("warn-only").onclick=function(){
+  S.warnOnly=!S.warnOnly;this.setAttribute("data-on",S.warnOnly?"1":"0");render();};
+document.getElementById("leaf-only").onclick=function(){
+  S.leafOnly=!S.leafOnly;this.setAttribute("data-on",S.leafOnly?"1":"0");render();};
+document.getElementById("q").oninput=function(){S.q=this.value.trim().toLowerCase();render();};
+document.getElementById("reset").onclick=function(){
+  Object.keys(DFLT.status).forEach(function(k){S.status[k]=DFLT.status[k];});
+  S.onlyActive=DFLT.onlyActive;S.warnOnly=DFLT.warnOnly;S.leafOnly=DFLT.leafOnly;S.q="";
+  document.getElementById("q").value="";
+  document.querySelectorAll(".chip[data-st]").forEach(function(c){
+    c.setAttribute("data-on",S.status[c.getAttribute("data-st")]?"1":"0");});
+  document.getElementById("only-active").setAttribute("data-on",DFLT.onlyActive?"1":"0");
+  document.getElementById("warn-only").setAttribute("data-on",DFLT.warnOnly?"1":"0");
+  document.getElementById("leaf-only").setAttribute("data-on",DFLT.leafOnly?"1":"0");
+  render();
+};
+document.querySelectorAll(".tab").forEach(function(t){
+  t.onclick=function(){
+    var k=t.getAttribute("data-pane");
+    document.querySelectorAll(".tab").forEach(function(x){x.setAttribute("data-on", x===t?"1":"0");});
+    document.getElementById("pane-tree").hidden=(k!=="tree");
+    document.getElementById("pane-help").hidden=(k!=="help");
+  };
+});
+render();
+</script>
+</body>
+</html>
