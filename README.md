@@ -320,19 +320,16 @@ git add scripts/reqtree_gap_gate.py .githooks/pre-commit && git commit -m "chore
 前面那些宿主都是「让 agent 认规则」。Harness 还能**让人直接看**，这是它独有的：
 
 ```bash
-dsh plugin --profile <你的 profile> add github:putaomeiyoupi/dsh-req-tree
+dsh plugin --profile <你的 profile> add dsh-req-tree
 ```
 
 装完右侧栏多一个**按会话停靠的 Tab**：当前工作区的需求树、各条需求线的收口进度、
-`todoctl check` 会报的那些告警、以及真源位置与判定依据。
+`todoctl check` 会报的那些告警、以及真源位置与判定依据。面板**只读** —— 状态流转走 `todoctl`。
 
-仓库：<https://github.com/putaomeiyoupi/dsh-req-tree>（MIT）· Release：<https://github.com/putaomeiyoupi/dsh-req-tree/releases>
+- npm：<https://www.npmjs.com/package/dsh-req-tree>
+- 仓库：<https://github.com/putaomeiyoupi/dsh-req-tree>（MIT）
 
-> **为什么不给 `add dsh-req-tree`（npm）这种写法**：包名已在 npm 预留，
-> 但截至 v0.1.0 尚未发布 —— 尚未发布前那条命令会直接失败。
-> `dsh plugin add` 透传 pnpm，因此**从 GitHub 装不需要 npm 账号**，
-> 四种源任选：`github:user/repo`、git url、tarball url、本地目录。
-> npm 上架后这里会补上最简洁的写法。
+> 不用 npm 也行：`dsh plugin add` 透传 pnpm，`add github:putaomeiyoupi/dsh-req-tree` 同样可用。
 
 | 问 | 答 |
 |---|---|
