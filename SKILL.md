@@ -111,6 +111,11 @@ agent_created: true
 | **查谁「做完了却没收口」** | `audit` | 终端（只报线索，需人工核 git） |
 | **提交前自查有没有漏记** | `scripts/reqtree_gap_gate.py gate` | 终端（只提醒，不阻断） |
 | 出全部视图 | `render` | 7 个派生物 |
+
+> **DeepSeek Harness 用户**：装了 [dsh-req-tree](https://github.com/putaomeiyoupi/dsh-req-tree)
+> 插件的话，右侧栏有个只读 Tab 能直接看树、需求线进度与告警（`dashboard.html` 的替代）。
+> ⚠️ **它只读，不能改** —— 状态流转仍然只能靠本文件的命令。**不要**因为「GUI 上能看见」就
+> 少记 `note`：面板不导出 note 正文，`resume` 的进度轨迹仍然只来自真源。
 | 把各线成果封成一个时点 | `baseline --name "…"` | `BASELINE.md` |
 | 本次提交到底写了什么 | `log --since "…" [--line <线ID>]` | 终端 / `--commit-msg` |
 

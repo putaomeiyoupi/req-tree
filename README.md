@@ -302,6 +302,7 @@ git add scripts/reqtree_gap_gate.py .githooks/pre-commit && git commit -m "chore
 
 | 宿主 | 认的文件 / 位置 | 接入方式 |
 |---|---|---|
+| **DeepSeek Harness** | **插件 `dsh-req-tree`** | **见下方「方式二之二」—— 它多一层 GUI** |
 | WorkBuddy | `<skills>/req-tree/SKILL.md` | 整个目录放进 skills 目录 |
 | Claude Code | `~/.claude/skills/req-tree/` | 整个目录放进 skills 目录 |
 | Codex CLI（OpenAI） | 项目根的 `AGENTS.md` | `ln -s /path/to/req-tree/SKILL.md AGENTS.md` |
@@ -313,6 +314,28 @@ git add scripts/reqtree_gap_gate.py .githooks/pre-commit && git commit -m "chore
 
 之后对 agent 说「记一下这个需求」「哪些还没收口」「这条为什么会有」，它会按这套流程走：
 先 `resume` 拿回现场，发现新需求当场 `add`，收尾时 `close` 附证据。
+
+### 方式二之二：DeepSeek Harness —— 在 GUI 里直接看到这棵树
+
+前面那些宿主都是「让 agent 认规则」。Harness 还能**让人直接看**，这是它独有的：
+
+```bash
+dsh plugin --profile <你的 profile> add dsh-req-tree
+```
+
+装完右侧栏多一个**按会话停靠的 Tab**：当前工作区的需求树、各条需求线的收口进度、
+`todoctl check` 会报的那些告警、以及真源位置与判定依据。
+
+仓库：<https://github.com/putaomeiyoupi/dsh-req-tree>（MIT）
+
+| 问 | 答 |
+|---|---|
+| 它会写真源吗 | **不会。** 面板是**只读**的，没有任何写入按钮 |
+| 为什么不做成可写 | req-tree 的第一铁律是「所有写入只走 CLI」。面板要能 `close`，就得在浏览器里重写一遍证据门与 override 确认，而浏览器那份一定比 CLI 弱。所以**只观察，CLI 负责判断** |
+| 改状态怎么办 | 照常用 `todoctl`。面板 3 秒内自动刷新（树没变化时不重渲染，Tab 不在看时完全不请求） |
+| 真源在哪 | 面板按**与 `todoctl` 完全相同的优先级**自动判定，并显示实际读到的路径。落点不一致时能立刻看出来 |
+
+> 也就是说：**agent 侧走 `SKILL.md`，人侧走插件**，两者共用同一份真源，不存在第二套状态。
 
 ---
 
@@ -350,6 +373,9 @@ git add scripts/reqtree_gap_gate.py .githooks/pre-commit && git commit -m "chore
 状态默认只显示 `未开始` / `进行中` / `阻塞`（`已完成` / `已收口` / `已放弃` 默认隐藏，
 免得稀释「还有几件事要做」），统计默认只算叶子节点；要考古时逐个点开状态标签，
 或按关键字 / 告警筛选。
+
+> 用 DeepSeek Harness 的话，装 [dsh-req-tree](https://github.com/putaomeiyoupi/dsh-req-tree)
+> 插件更顺手：不用切窗口，右侧栏直接看。它是**只读**的 —— 状态流转仍走 `todoctl`。
 
 **数据坏了会怎样？**
 `check` 会给出带错误码的清单（ID 重复、成环、假收口、缺证据……），
@@ -396,11 +422,15 @@ req-tree/
 │   ├── entry-map.md      # 功能与入口索引：「我要做 X → 打哪条命令」
 │   ├── schema.md         # 数据模型与状态机
 │   └── discipline.md     # 触发时机与写入纪律
-└── scripts/
-    ├── todoctl.py        # 工具本体（零依赖，仅标准库）
-    ├── todoctl           # macOS / Linux / WSL / Git Bash 启动
-    └── todoctl.cmd       # Windows 启动
+├── scripts/
+│   ├── todoctl.py        # 工具本体（零依赖，仅标准库）
+│   ├── todoctl           # macOS / Linux / WSL / Git Bash 启动
+│   └── todoctl.cmd       # Windows 启动
+└── docs/requirements/    # 本项目自己的真源（仅本仓库有）
 ```
+
+> DSH 面板插件**不在本仓库** —— 它读 `tree.json`，但不进本仓库代码：
+> <https://github.com/putaomeiyoupi/dsh-req-tree>。两份副本必然漂移，所以单一真源是本仓库。
 
 ---
 
