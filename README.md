@@ -296,8 +296,7 @@ git add scripts/reqtree_gap_gate.py .githooks/pre-commit && git commit -m "chore
 ### 方式二：接入你的 AI 宿主（默认推荐）
 
 **通用做法（首选）**：把整个目录放进宿主的 skills 目录，或把 `SKILL.md` 软链成宿主认的名字 ——
-不需要 npm、不需要插件市场。下面表格里 **WorkBuddy / Claude Code / Cursor / Codex / Gemini 都走这条**；
-只有 **DeepSeek Harness** 另有可选插件（方式二之二），它只是多一层给人看的 GUI，不影响这条通用路径。
+不需要 npm、不需要插件市场。下面表格里 **WorkBuddy / Claude Code / Cursor / Codex / Gemini 都走这条**。
 
 本仓库只带**一份** `SKILL.md`（带 frontmatter 的标准 skill 定义）。
 
@@ -312,40 +311,11 @@ git add scripts/reqtree_gap_gate.py .githooks/pre-commit && git commit -m "chore
 | Cursor | `.cursor/rules/` 下的规则文件 | 软链或复制 `SKILL.md` 进去 |
 | Gemini CLI | `GEMINI.md` | 同上 |
 | 其他 | 任何「项目/工具说明」文件 | 认哪个名字，就链到哪个名字 |
-| **DeepSeek Harness**（**可选**） | 插件 `dsh-req-tree` | **只有你用 DeepSeek Harness 时才需要** —— 见下方「方式二之二」，它多一层 GUI |
 
 **用符号链接（Windows 用 `mklink`）**：一份内容、多个入口，改一处到处生效。
 
 之后对 agent 说「记一下这个需求」「哪些还没收口」「这条为什么会有」，它会按这套流程走：
 先 `resume` 拿回现场，发现新需求当场 `add`，收尾时 `close` 附证据。
-
-### 方式二之二（可选）：如果你用 DeepSeek Harness —— 在 GUI 里直接看到这棵树
-
-> ⚠️ **这一节只有 DeepSeek Harness 用户需要看。** 其他宿主走上面的「整个目录放进 skills 目录」就够了 ——
-> 不用装插件、不用 npm；面板只是给人看的一层 GUI，能力完全一致、真源还是同一份。
-
-前面那些宿主都是「让 agent 认规则」。Harness 还能**让人直接看**，这是它独有的：
-
-```bash
-dsh plugin --profile <你的 profile> add dsh-req-tree
-```
-
-装完右侧栏多一个**按会话停靠的 Tab**：当前工作区的需求树、各条需求线的收口进度、
-`todoctl check` 会报的那些告警、以及真源位置与判定依据。面板**只读** —— 状态流转走 `todoctl`。
-
-- npm：<https://www.npmjs.com/package/dsh-req-tree>
-- 仓库：<https://github.com/putaomeiyoupi/dsh-req-tree>（MIT）
-
-> 不用 npm 也行：`dsh plugin add` 透传 pnpm，`add github:putaomeiyoupi/dsh-req-tree` 同样可用。
-
-| 问 | 答 |
-|---|---|
-| 它会写真源吗 | **不会。** 面板是**只读**的，没有任何写入按钮 |
-| 为什么不做成可写 | req-tree 的第一铁律是「所有写入只走 CLI」。面板要能 `close`，就得在浏览器里重写一遍证据门与 override 确认，而浏览器那份一定比 CLI 弱。所以**只观察，CLI 负责判断** |
-| 改状态怎么办 | 照常用 `todoctl`。面板 3 秒内自动刷新（树没变化时不重渲染，Tab 不在看时完全不请求） |
-| 真源在哪 | 面板按**与 `todoctl` 完全相同的优先级**自动判定，并显示实际读到的路径。落点不一致时能立刻看出来 |
-
-> 也就是说：**agent 侧走 `SKILL.md`，人侧走插件**，两者共用同一份真源，不存在第二套状态。
 
 ---
 
@@ -383,16 +353,6 @@ dsh plugin --profile <你的 profile> add dsh-req-tree
 状态默认只显示 `未开始` / `进行中` / `阻塞`（`已完成` / `已收口` / `已放弃` 默认隐藏，
 免得稀释「还有几件事要做」），统计默认只算叶子节点；要考古时逐个点开状态标签，
 或按关键字 / 告警筛选。
-
-> 用 DeepSeek Harness 的话，装 [dsh-req-tree](https://github.com/putaomeiyoupi/dsh-req-tree)
-> 插件更顺手：不用切窗口，右侧栏直接看。它是**只读**的 —— 状态流转仍走 `todoctl`。
-
-**`dsh plugin add` 报 `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`？**
-这不是本插件的问题。DSH 的 profile 有一条供应链策略：某个包的新版本必须**发布满24 小时**
-才允许进 lockfile（防刚发布的恶意版本）。如果你的 profile 里恰好有个别的包刚发过 rc 版本，
-装任何插件都会被它拦掉。等冷却期过去即可，或把那个包回退到上一个版本。
-
-> 排查思路：报错里会点名是哪个包（`dsh-xxx@版本 was published at ...`），那个包才是要等的对象。
 
 **数据坏了会怎样？**
 `check` 会给出带错误码的清单（ID 重复、成环、假收口、缺证据……），
@@ -445,9 +405,6 @@ req-tree/
 │   └── todoctl.cmd       # Windows 启动
 └── docs/requirements/    # 本项目自己的真源（仅本仓库有）
 ```
-
-> DSH 面板插件**不在本仓库** —— 它读 `tree.json`，但不进本仓库代码：
-> <https://github.com/putaomeiyoupi/dsh-req-tree>。两份副本必然漂移，所以单一真源是本仓库。
 
 ---
 

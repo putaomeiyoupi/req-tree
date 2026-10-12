@@ -3,7 +3,7 @@ name: req-tree
 description: 项目推进中的需求派生与收口的唯一真源 —— 用树形结构记录「需求 → 派生需求 → 再派生」的追溯链，强校验状态流转、收口证据与假收口，并投影出全树/活跃/聚焦三层视图与看板。Use when asked to 记录待办/需求/派生出的新需求、某条需求为什么存在、哪些还没收口、需求越做越多难以追踪、记录表格混乱，或在推进项目时需要同步更新待办真源。
 description_zh: "需求派生树 + 收口真源：不可变 ID 与渲染编号分离、done≠closed、收口必附证据、三层视图、深度/宽度压制告警、假收口阻断。"
 description_en: "Single source of truth for requirement derivation trees and closure: immutable IDs, evidence-gated closure, three layered views, anti-false-closure validation."
-version: 1.7.0
+version: 1.8.0
 display_name: "需求派生树与收口真源"
 display_name_en: "req-tree"
 visibility: "public"
@@ -113,12 +113,6 @@ agent_created: true
 | 出全部视图 | `render` | 7 个派生物 |
 | 把各线成果封成一个时点 | `baseline --name "…"` | `BASELINE.md` |
 | 本次提交到底写了什么 | `log --since "…" [--line <线ID>]` | 终端 / `--commit-msg` |
-
-> **DeepSeek Harness 用户**（可选）：装了 [dsh-req-tree](https://github.com/putaomeiyoupi/dsh-req-tree)
-> 插件（`dsh plugin --profile <name> add dsh-req-tree`，npm 已上架）的话，
-> 右侧栏有个只读 Tab 能直接看树、需求线进度与告警（`dashboard.html` 的替代）。
-> ⚠️ **它只读，不能改** —— 状态流转仍然只能靠本文件的命令。**不要**因为「GUI 上能看见」就
-> 少记 `note`：面板不导出 note 正文，`resume` 的进度轨迹仍然只来自真源。
 
 ### 🔴 别指望「记得调用」—— 让提醒下沉到绕不过去的时刻
 
